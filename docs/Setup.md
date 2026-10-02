@@ -293,3 +293,34 @@ pip install acmadDL
 cd ~/Projects/<project-name>
 source venv/bin/activate
 ```
+
+
+## Other Essential Commands.
+
+    python -m pip list
+    <!-- command to verify all dependencies in the project.
+    Ensure the virtual environment has been activated before running this command. -->
+
+
+## PROJECT STRUCTURE.
+
+-Below is the proposed project structure:
+
+    ziwavision/
+    ├─ .venv/              # your isolated Python packages (don't edit)
+    ├─ .gitignore          # add: .venv/  data/  outputs/
+    ├─ requirements.txt    # the list of packages this project needs
+    ├─ README.md
+    ├─ data/               # downloaded satellite/climate files
+    ├─ outputs/            # images and results your scripts produce
+    └─ src/
+    ├─ explore_tile.py  # today's script: look at one satellite image
+    ├─ vision.py        # later: hyacinth detection functions
+    ├─ climate.py       # later: rainfall data via acmadDL
+    ├─ risk.py          # later: combine the two into a risk score
+    └─ agent.py         # later: the retry/decide loop
+
+
+-On creating a python file, run it using:
+
+    python pathToPythonFile

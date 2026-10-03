@@ -24,6 +24,7 @@ Move items here once you can explain them without looking.
 - NumPy: `.shape`, `dtype`, `dstack`, `clip`, `isin`, `unique`, painting with a mask
 - OpenCV: `imwrite` fails silently; `resize` takes (width, height)
 - matplotlib: `subplots`, `imshow`, `savefig`
+- &/| on masks, array slicing, connected components, contours and filling, erosion, and pixel area to hectares.
 
 ## Day log
 

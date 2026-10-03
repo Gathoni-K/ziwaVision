@@ -161,3 +161,37 @@ plt.imsave("outputs/shore_crop.png", crop)
 # cloud/no-data fraction: 0.0
 # green fraction: 0.378209846154846
 # 37.8% of pixels have NDVI above 0.3
+
+# what we have achieved upto this point is scene selection by footprint, SCL and a 3-panel comparison
+
+# The next task is finding a lake mask and candidate floating vegetation.
+
+water = (scl == 6).astype("uint8")
+n, labels, stats, _ = cv2.connectedComponentsWithStats(water, connectivity=8)
+biggest = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+lake = (labels == biggest).astype("uint8")
+
+# what this block of code does is that it keeps only the biggest water gulf and drops ponds and ricefields
+
+contours, _ = cv2.findContours(lake, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+lake_filled = np.zeros_like(lake)
+cv2.drawContours(lake_filled, contours, -1, 1, thickness=cv2.FILLED)
+
+# this block of code ensure that anything completely surrounded by lake is filled
+
+green = ndvi > 0.3
+candidates = (lake_filled == 1) & (green | (scl == 4))
+# the candidates are the green inside the filled lake
+
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+interior = cv2.erode(lake_filled, kernel)
+far = candidates & (interior == 1)
+
+print("candidates:", candidates.sum(), "px =", candidates.sum() * 0.01, "ha")
+print("away from shore:", far.sum(), "px =", far.sum() * 0.01, "ha")
+
+#  picture: candidates in red on the true-colour image
+overlay = rgb.copy()
+overlay[candidates] = [1, 1, 0]      # yellow: all candidates
+overlay[far] = [1, 0, 0]             # red: away from shore
+plt.imsave("outputs/candidates.png", overlay)

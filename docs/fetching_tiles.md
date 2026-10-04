@@ -207,3 +207,27 @@ Ordered roughly by how much they help this project.
 - Where should the NDVI threshold sit, and how will we justify it?
 - How will we handle scenes where clouds cover most of a zone? (The agent's "low confidence" path.)
 - How will we label a small validation set for the segmentation step?
+
+## 9.What each image represents so far:
+
+1. ndvi_mask.png - this is produced by NDVI and a threshold, the 0.3.
+- The purpose of this image was to test whether we can pick out green things from the satellite bands at all.
+- It confirmed this as land lights up white.
+- However, this produced a black and white image, the problem is this is that we could not differentiate the vegetation on land and on the lake.
+
+2. compare.png - this is produced by rgb stackng.
+- It's purpose was testing whether the mask matches what is truly there.
+- However, this produced an image where there was no lake visible, the strip was clipped and cloudy.
+- The problem with this image was that it was the wrong shape initially.
+
+3. candidates.png - this is produced by the lake mask, fill and erode.
+- It was used to test for which green pixels are inside the lake and which are away from the shore.
+- This produced 272px with (5,5) inside and only 27 away from the shore.
+- It was used to test for the vegetation touching the shore.
+
+**Upto this point, none of the images are hyacinth detectors, everything so far is preparation, making sure we are checking at the right place with no cloud, with the lake separated from the land**
+
+4. shore.png - this is a true-color photooe with 2 ovrlays painted on top:
+- Greyish-green water - the real satellite colors.
+- Cyan band - the shore band from 'ring(...)' about 30m inside the lake edge to 50m outside. It is a location not a class.
+- Yellow - the pixels inside that band that passed 'green_like'

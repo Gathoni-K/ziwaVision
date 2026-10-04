@@ -167,24 +167,34 @@ plt.imsave("outputs/shore_crop.png", crop)
 # The next task is finding a lake mask and candidate floating vegetation.
 
 water = (scl == 6).astype("uint8")
+# the water mark is made as 0/1 integers.
+# Open CV's shape functions want integer masks not True/False
 n, labels, stats, _ = cv2.connectedComponentsWithStats(water, connectivity=8)
+# connectedComponents... finds each separate blobs of 1s.
+# labels numbers every blob and stats holds each blob's size.
+# row 0 is the background which is why we search stats[1:, ...] and add 1 back
 biggest = 1 + np.argmax(stats[1:, cv2.CC_STAT_AREA])
+# argmax is the position of the largest value so the 'biggest' is the blob number of the gulf
 lake = (labels == biggest).astype("uint8")
 
 # what this block of code does is that it keeps only the biggest water gulf and drops ponds and ricefields
 
 contours, _ = cv2.findContours(lake, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+# findContours with RETR_ECTERNAL traces only the outer outline of each shape, ignoring any holes inside
 lake_filled = np.zeros_like(lake)
 cv2.drawContours(lake_filled, contours, -1, 1, thickness=cv2.FILLED)
+# drawContours paints the inside of that outline solid, so holes in the lake get filled, a mat completely surrounded by water is no longer a hole
 
 # this block of code ensure that anything completely surrounded by lake is filled
 
 green = ndvi > 0.3
 candidates = (lake_filled == 1) & (green | (scl == 4))
 # the candidates are the green inside the filled lake
+# the block of code ensures we capture any vegetation labelled as green either by scl or ndvi
 
-kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 5))
 interior = cv2.erode(lake_filled, kernel)
+# .erode - shrinks the lake edge inwards by about 3 pixels all around which pushes the shoreline pixels out of the 'interior'
 far = candidates & (interior == 1)
 
 print("candidates:", candidates.sum(), "px =", candidates.sum() * 0.01, "ha")
@@ -195,3 +205,49 @@ overlay = rgb.copy()
 overlay[candidates] = [1, 1, 0]      # yellow: all candidates
 overlay[far] = [1, 0, 0]             # red: away from shore
 plt.imsave("outputs/candidates.png", overlay)
+
+# the block of code below creates the shore band.
+# the Question we are answering is how much green sits right at the water's edge, where mats can attach?
+# the expected output is : 'band', 'shore_green', 'printed hectares', 'outputs'
+
+def ring(mask, inside_px, outside_px):
+    """
+    Pixels from `inside_px` isnide the mask edge to `outside_px` outside it.
+    """
+    k_out = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*outside_px + 1, 2*outside_px + 1))
+    k_in = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*inside_px + 1, 2*inside_px + 1))
+    grown = cv2.dilate(mask, k_out)
+    shrunk = cv2.erode(mask, k_in)
+    return (grown == 1) & (shrunk == 0)
+
+band = ring(lake_filled, inside_px=3, outside_px=5)
+
+# green_like = green | np.isin(scl, [4, 7])
+# # what this line does is that it shows all green where the NDVI is above 0.3, SCL vegetation or SCL Unclassified.
+# # the unclassified was included on purpose, it is the mixed-pixel strip where a mat at the edge could hide, but it also means yellow is not necessarily green
+# shore_green = band & green_like
+# ===== STEP 6: THE SHORE BAND =====
+# Question: how much vegetation sits at the water's edge, and how much of the edge is uncertain?
+# Output: shore_green, shore_uncertain, printed numbers, outputs/shore.png
+
+green_like = green | (scl == 4)                       # vegetation only
+shore_green = band & green_like                            # vegetation inside the band
+shore_uncertain = band & (scl == 7) & ~green_like          # unclassified, no vegetation signal
+
+overlay2 = rgb.copy()
+overlay2[band] = overlay2[band] * 0.6 + np.array([0, 0.4, 0.4])   # cyan: the band
+overlay2[shore_uncertain] = [1, 0, 1]                              # magenta: uncertain
+overlay2[shore_green] = [1, 1, 0]                                  # yellow: vegetation signal
+plt.imsave("outputs/shore.png", overlay2)
+
+band_px = band.sum()
+print("shore band:", band_px, "px =", band_px * 0.01, "ha")
+print("band vegetation:", shore_green.sum(), "px =", shore_green.sum() * 0.01, "ha",
+    f"({shore_green.sum() / band_px:.1%} of band)")
+print("band uncertain:", shore_uncertain.sum(), "px =", shore_uncertain.sum() * 0.01, "ha",
+    f"({shore_uncertain.sum() / band_px:.1%} of band)")
+
+
+crop = overlay2[250:550, 0:330]
+crop = cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_NEAREST)
+plt.imsave("outputs/shore_crop1.png", crop)

@@ -25,6 +25,7 @@ Move items here once you can explain them without looking.
 - OpenCV: `imwrite` fails silently; `resize` takes (width, height)
 - matplotlib: `subplots`, `imshow`, `savefig`
 - &/| on masks, array slicing, connected components, contours and filling, erosion, and pixel area to hectares.
+- reading a legend from palette, what "unclassified" means, why a mask's definition decides what it can find, and why the near-shore and open-water numbers need separate reporting.
 
 ## Day log
 

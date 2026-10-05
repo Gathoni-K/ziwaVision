@@ -256,4 +256,12 @@ Ordered roughly by how much they help this project.
 
       NDVI-green pixels inside SCL water: 1752
 
-- This difference is worth examining: possible floatng plants, (green, but over water), possible mixed shoreline pixels, possibly pnds.
+- This difference is worth examining: possible floatng plants, (green, but over water), possible mixed shoreline pixels, possibly ponds.
+- As for who decides the pixel size, the sensor's designers do.Sentinel-2's instrument was built by ESA so that each nand is recorded at a fixed ground size and that size is part of the data being downloaded.
+- Different bands have different native sizes:
+
+   Blue, green. red, NIR - 10m
+   Red-edge, SWIR, SCL - 20m
+   COastal, water vapour - 60m
+
+- Pixels can be larger or smaller than 10m BUT THAT IS PER DATASET NOT PER CHOICE, AN IMAGE CAN BE RESIZED, BUT THAT ADDS NO INFORMATION.

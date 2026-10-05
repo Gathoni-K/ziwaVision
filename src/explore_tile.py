@@ -15,6 +15,8 @@ items = list(catalog.search(
     # the list is a class constructor used to create a new list or convert other collections into a list
     collections = ["sentinel-2-l2a"], bbox = BBOX,
     datetime="2026-08-01/2026-09-30",
+    # below is a range, it shows the start/end it tells the catalogue to provide any scenes captures between these days.
+    # the catalogue then returns every scene in that window that matches the box and cloud filter
     query={"eo:cloud_cover": {"lt": 20}}, max_items=5,
 ).items())
 # so what this does, it asks for information of the defined long/lat defined inside BBOX, specifies the day 

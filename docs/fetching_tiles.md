@@ -231,3 +231,29 @@ Ordered roughly by how much they help this project.
 - Greyish-green water - the real satellite colors.
 - Cyan band - the shore band from 'ring(...)' about 30m inside the lake edge to 50m outside. It is a location not a class.
 - Yellow - the pixels inside that band that passed 'green_like'
+
+
+**NDVI vs SCL**
+
+- NDVI was created and exists in our script.
+- It is one formula on two bands (NIR - red ) / (NIR + red)
+- It outputs a continuous number between -1 and 1.
+- Its threshold is chosen as 0.3
+
+- SCL is made by ESA, In their processing before it is downloaded.
+- It is a longer set of tests on many bands plus thresholds.
+- Outputs a category label (watre, vegetation, cloud)
+- Its threshold is fixed by ESA.
+
+- THEY OVERLAP BUT DO NOT AGREE EVERYWHERE, WHICH IS WHY WE COMPARE THEM:
+'NDVI-green pixels inside SCL water is:'
+
+   green & (scl == 6)
+
+- Pixels where the test says 'green' and ESA's label says 'water'. If the two always agreed, it would be 0.
+
+- But this is what the terminal outputs:
+
+      NDVI-green pixels inside SCL water: 1752
+
+- This difference is worth examining: possible floatng plants, (green, but over water), possible mixed shoreline pixels, possibly pnds.

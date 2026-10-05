@@ -26,6 +26,8 @@ Move items here once you can explain them without looking.
 - matplotlib: `subplots`, `imshow`, `savefig`
 - &/| on masks, array slicing, connected components, contours and filling, erosion, and pixel area to hectares.
 - reading a legend from palette, what "unclassified" means, why a mask's definition decides what it can find, and why the near-shore and open-water numbers need separate reporting.
+- Understand : .mean() on a boolean grid gives a fraction.
+- Revisit: "fetching" vs "deriving"; NDVI (our calculation, our threshold) vs SCL (ESA's labels); a disagreement between two methods is information; a clean scene gives 0 for cloud, and that's a result, not a bug.
 
 ## Day log
 

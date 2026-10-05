@@ -83,8 +83,9 @@ scl = cv2.resize(scl, (red.shape[1], red.shape[0]), interpolation=cv2.INTER_NEAR
 
 print(np.unique(scl, return_counts=True))
 
-bad = np.isin(scl, [0, 1, 3, 8, 9, 10])   # no data, defective, cloud shadow, clouds, cirrus
+bad = np.isin(scl, [0, 1, 3, 8, 9, 10])  
 print("cloud/no-data fraction:", bad.mean())
+# what this does, bad is True where SCL says no data, defective, cloud shadow, clouds, cirrus
 
 veg = (ndvi > 0.3 ).astype("uint8") * 255
 # the first part of L.H gives a grid of true/false values the same shape as the image
@@ -226,7 +227,8 @@ band = ring(lake_filled, inside_px=3, outside_px=5)
 # # what this line does is that it shows all green where the NDVI is above 0.3, SCL vegetation or SCL Unclassified.
 # # the unclassified was included on purpose, it is the mixed-pixel strip where a mat at the edge could hide, but it also means yellow is not necessarily green
 # shore_green = band & green_like
-# ===== STEP 6: THE SHORE BAND =====
+
+
 # Question: how much vegetation sits at the water's edge, and how much of the edge is uncertain?
 # Output: shore_green, shore_uncertain, printed numbers, outputs/shore.png
 
@@ -251,3 +253,15 @@ print("band uncertain:", shore_uncertain.sum(), "px =", shore_uncertain.sum() * 
 crop = overlay2[250:550, 0:330]
 crop = cv2.resize(crop, None, fx=3, fy=3, interpolation=cv2.INTER_NEAREST)
 plt.imsave("outputs/shore_crop1.png", crop)
+
+# this is what the terminal outputs upto here.
+# cloud/no-data fraction: 0.0
+# green fraction: 0.378209846154846
+# NDVI-green pixels inside SCL water: 1752
+# NDVI-green but SCL says not vegetated: 234678
+# share of all pixels: 0.1906435370900211
+# candidates: 272 px = 2.72 ha
+# away from shore: 19 px = 0.19 ha
+# shore band: 17459 px = 174.59 ha
+# band vegetation: 2477 px = 24.77 ha (14.2% of band)
+# band uncertain: 5333 px = 53.33 ha (30.5% of band)

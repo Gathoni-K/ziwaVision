@@ -77,5 +77,42 @@
 - Bare soil is around 0.1 - 0.2
 - Healthy, lush forests are 0.7-0.9
 
-3. NDWI (Normalized Difference Water Index)
+
+- And why is NDVI calculated this way; Healthy plants do two things:
+    1. they absorb red light for photosynthesis.
+    2. they reflect near-infrared light because of the internal structure of their leaves.
+   
+- So a healthy plant has low red reflectance and high NIR reflectance.
+- That makes NIR and Red almost opposite signals for vegetation.
+- Why subtract? it measures the contrast between NIR and Red.
+- Healthy plant : NIR is high, Red is low: NIR-Red is large positive.
+- Bare soil : NIR and Red are closer, NIR-Red is small.
+- Water : NIR is very low, Red is abit higher, NIR - Red is negative.
+- The only problem with this is that it all depends on how bright the scene is, the difference would change on the same plant on a hazy day.
+- Why add? This is our normalizer, it represents the total light reflected in the two bands.
+- By dividing the difference and the sum, it makes NDVI less sensitive to overall brightness, sun angle, haze and sensor exposure.
+- So it is really just a rescaled version of the ratio NIR / Red
+
+**What the Values Mean:**
+1. Water - negative, often around -1 to 0, because water absorbs NIR strongly, so NIR < Red
+2. Bare soil/rock/buildings - around 0 to 0.2, NIR and Red are relatively close.
+3. Stressed or sparse vegetation: around 0.2 to 0.4
+4. Healthy vegetation - around 0.4 to 0.7
+5. Dense, lush vegetation - often 0.7 to 0.9
+6. Clouds - reflect red and NIR about equally, so they sit near 0, that is why SCL is needed for clouds.
+
+**So in conclusion, NDVI subtracts red from NIR to measure how 'plant-like' the pixel is, then divides by their sum so their result is a stable, comparable ratio rather than a brightness-dependent number**
+
+
+6. NDWI (Normalized Difference Water Index)
 - Is used tomap water bodies and floods.
+- How it works is that the water absorbs NIR (B8) but reflects green (B3).
+- Water shows up as bright white values while land is dark.
+
+
+**On downoadind Sentinel-2 data, the bands have different pixel sizes:**
+1. A 10m pixel means one pixel covers a 10 * 10 metre square on the ground(Bands 2.3, 4, 8)
+2. A 20m pixel covers 20 * 20m (Bands 5,6,7, 8A 11, 12)
+3. A 60m pixel covers 60 * 60 m (Bands 1, 9, 10)
+   
+-If there is a need to combine a 10m band with a 20m band, one has to resample(upscale or downscale) the 20m band to match the 10m band.

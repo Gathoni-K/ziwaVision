@@ -77,6 +77,9 @@ def read_band(name, as_float=True):
 red, nir = read_band("red"), read_band("nir")
 print(item.id, "shape:", red.shape)
 ndvi = ( nir - red) / (nir + red + 1e-6)
+# ndvi is usually calculated by (Band 8 - Band 4 ) / (Band 8 + 4)
+# nir stands for Near-Infrared Band that is 10m
+# red is band 4
 # healthy vegetation reflects a lot of near-infrared and absorbs red, so the result turns from -1 to +1, with higher meaning greener
 # 1e-6 is 0.0000001 so a pixel where nir + red is 0, it will not cause a division by 0
 

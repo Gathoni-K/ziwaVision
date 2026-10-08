@@ -116,3 +116,6 @@
 3. A 60m pixel covers 60 * 60 m (Bands 1, 9, 10)
    
 -If there is a need to combine a 10m band with a 20m band, one has to resample(upscale or downscale) the 20m band to match the 10m band.
+
+
+**Remember that scl is a discrete categorical map used for quality control like cloud maskin and is calculated using an algorithm. It also has hard integer class codes.**

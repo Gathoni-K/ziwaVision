@@ -4,6 +4,7 @@ from rasterio.windows import from_bounds
 from rasterio.warp import transform_bounds
 import matplotlib.pyplot as plt
 
+# what this file does is that it finds NDVI, shore band and candidates, bt it only works so far one date.
 
 BBOX = [34.73, -0.22, 34.83, -0.12]
 # longitude/latitude box

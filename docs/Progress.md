@@ -28,6 +28,11 @@ Move items here once you can explain them without looking.
 - reading a legend from palette, what "unclassified" means, why a mask's definition decides what it can find, and why the near-shore and open-water numbers need separate reporting.
 - Understand : .mean() on a boolean grid gives a fraction.
 - Revisit: "fetching" vs "deriving"; NDVI (our calculation, our threshold) vs SCL (ESA's labels); a disagreement between two methods is information; a clean scene gives 0 for cloud, and that's a result, not a bug.
+- A metadata check that comes back None means check your key spelling before drawing conclusions.
+- Net change = lost − gained, and it’s useful to verify it against an earlier number.
+- Comparing a change to the size of the thing you built (the band) tells you how big it really is.
+- two columns that move together suggest a link but don’t prove it (the mirror wasn’t exact); a median-like rule over many dates gives a more stable reference than any single date; min_share is a chosen value, like the 5% cloud cutoff.
+- one-directional tests and what 100% means; how a chosen number (min_share) shapes a result; why we build the band once and measure inside it (a fixed ruler); using two independent measures to check each other.
 
 ## Day log
 
@@ -71,3 +76,12 @@ Move items here once you can explain them without looking.
 - Check `.shape` and a picture after every new step.
 - Time-box: stuck for 45 minutes, ask for help.
 - Commit after each working step.
+
+
+## Demistifying Outputs.
+
+- For evry output, pick one printed number.
+- FInd the 'print' that produced it.
+- List the variables in that line.
+- For each variable, find hte line where it was made, and say in word what it counts.
+- Do the arithmetic backwards (ha / 0.01 = pixels) and see whether it makes sense against what we currently know.

@@ -1,4 +1,8 @@
 # the file only holds functions.
+# What is handled in this file:
+# 1.Find scenes covering the box.
+# 2. Read bands, SCL, box-level cloud check.
+# 3. Finds the lake mask
 
 import numpy as np, rasterio, cv2
 from pystac_client import Client
@@ -77,3 +81,26 @@ def lake_mask(scl):
     cv2.drawContours(filled, contours, -1, 1, thickness=cv2.FILLED)
 
     return filled
+
+def reference_lake(masks, min_share=0.6):
+    """
+    Pixels that are lake on at least `min_share` of the dates. 'masks' is a list of 0/1 grids.
+    """
+    stack = np.stack(masks)
+    share = stack.mean(axis=0)
+    return (share >= min_share).astype("uint8")
+
+
+def ring(mask, inside_px, outside_px):
+    """
+    A strip around a mask's edge, 'inside_px'...it becomes a True/False grid.
+    """
+
+    k_out = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*outside_px + 1, 2*outside_px + 1))
+    k_in = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*inside_px + 1, 2*inside_px + 1))
+
+    return (cv2.dilate(mask, k_out) == 1) & (cv2.erode(mask, k_in))
+
+def ndvi_of(red, nir):
+    """NDVI = (NIR - red) / (NIR + red). The 1e-6 avoids dividing by zero."""
+    return (nir - red) / (nir + red + 1e-6)

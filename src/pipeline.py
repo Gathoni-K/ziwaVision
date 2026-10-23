@@ -104,3 +104,25 @@ def ring(mask, inside_px, outside_px):
 def ndvi_of(red, nir):
     """NDVI = (NIR - red) / (NIR + red). The 1e-6 avoids dividing by zero."""
     return (nir - red) / (nir + red + 1e-6)
+
+
+NDVI_THRESHOLD: float = 0.30
+
+
+def candidates_mask(lake_filled, ndvi, scl, erode_shore_px: int = 7):
+    """
+    Candidate floating-vegetation pixels: inside the filled lake, away from
+    the shore by `erode_shore_px` pixels, and either NDVI > threshold or
+    SCL class 4 (vegetation).
+
+    Returns a boolean array. Mirrors the logic in explore_tile.py and vision.py
+    so all modules use the same definition.
+    """
+    kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (2 * erode_shore_px + 1, 2 * erode_shore_px + 1)
+    )
+    interior = cv2.erode(lake_filled, kernel)
+    veg_ndvi = ndvi > NDVI_THRESHOLD
+    veg_scl  = scl == 4
+    return (interior == 1) & (veg_ndvi | veg_scl)

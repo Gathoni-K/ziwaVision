@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useHotspots } from './hooks/useHotspots';
+import { useVerify } from './hooks/useVerify';
 import { Header } from './components/Header';
 import { StatsRow } from './components/StatsRow';
 import { AreaOverTimeChart } from './components/AreaOverTimeChart';
 import { HotspotList } from './components/HotspotList';
 import { HotspotDetail } from './components/HotspotDetail';
+import { Toast, ToastMessage } from './components/Toast';
+import { VerificationStatus } from './types/hotspot';
 
 export const App: React.FC = () => {
   const {
@@ -14,9 +17,28 @@ export const App: React.FC = () => {
     isApiConnected,
     isFallback,
     refetch,
+    updateLocalHotspot,
   } = useHotspots();
 
+  const { isVerifying, verify } = useVerify();
+
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  const addToast = useCallback(
+    (type: 'success' | 'error' | 'info', message: string) => {
+      const id = Date.now().toString() + Math.random().toString(36).slice(2, 6);
+      setToasts((prev) => [...prev, { id, type, message }]);
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 4000);
+    },
+    []
+  );
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   // Automatically select the first needs_review observation on load (matching old dashboard UX)
   useEffect(() => {
@@ -30,6 +52,31 @@ export const App: React.FC = () => {
 
   const selectedHotspot =
     hotspots.find((h) => h.date === selectedDate) || null;
+
+  const handleVerify = async (newStatus: VerificationStatus) => {
+    if (!selectedHotspot) return;
+
+    try {
+      const updated = await verify(selectedHotspot, newStatus, isFallback);
+      updateLocalHotspot(updated);
+
+      const statusLabels: Record<VerificationStatus, string> = {
+        verified: 'marked as verified ✓',
+        uncertain: 'flagged as uncertain ⚑',
+        rejected: 'rejected ✕',
+        needs_review: 'reset to needs review',
+        skipped: 'skipped',
+      };
+
+      addToast(
+        'success',
+        `Scene ${selectedHotspot.date} ${statusLabels[newStatus] || newStatus}.`
+      );
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Action failed';
+      addToast('error', `Verification failed: ${msg}`);
+    }
+  };
 
   return (
     <div className="app-root">
@@ -93,8 +140,12 @@ export const App: React.FC = () => {
         <HotspotDetail
           hotspot={selectedHotspot}
           onClose={() => setSelectedDate(null)}
+          onVerify={handleVerify}
+          isVerifying={isVerifying}
         />
       </main>
+
+      <Toast toasts={toasts} onDismiss={dismissToast} />
     </div>
   );
 };

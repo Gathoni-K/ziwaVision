@@ -164,15 +164,19 @@ def apply_verification(
     date: str,
     patch_id: Optional[int],
     verified: bool,
+    status: Optional[str] = None,
 ) -> list:
     """
     Update verification_status in the results list for a given date.
-    Called by the API when a human clicks Verify or Flag as Uncertain.
+    Called by the API when a human clicks Verify, Flag Uncertain, or Reject.
 
     `results` is the list of dicts from results.json.
     Returns the updated list.
     """
-    new_status = "verified" if verified else "uncertain"
+    if status is not None:
+        new_status = status
+    else:
+        new_status = "verified" if verified else "uncertain"
     for entry in results:
         if entry.get("date") == date:
             entry["verification_status"] = new_status

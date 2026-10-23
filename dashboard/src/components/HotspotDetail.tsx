@@ -4,12 +4,13 @@ import { StatusBadge } from './StatusBadge';
 import { OverlayViewer } from './OverlayViewer';
 import { PatchCardList } from './PatchCardList';
 import { TraceTimeline } from './TraceTimeline';
+import { VerifyControls } from './VerifyControls';
 
 interface HotspotDetailProps {
   hotspot: Hotspot | null;
   onClose: () => void;
-  onVerify?: (status: VerificationStatus) => void;
-  isVerifying?: boolean;
+  onVerify: (status: VerificationStatus) => void;
+  isVerifying: boolean;
 }
 
 function getScoreColor(val?: number): string {
@@ -23,7 +24,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
   hotspot,
   onClose,
   onVerify,
-  isVerifying = false,
+  isVerifying,
 }) => {
   if (!hotspot) {
     return (
@@ -35,10 +36,6 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
       </aside>
     );
   }
-
-  const isVerified = hotspot.verification_status === 'verified';
-  const isUncertain = hotspot.verification_status === 'uncertain';
-  const isRejected = hotspot.verification_status === 'rejected';
 
   return (
     <aside className="detail-panel" aria-label={`Detail for scene ${hotspot.date}`}>
@@ -120,34 +117,12 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
       />
 
       {/* Action Controls */}
-      <div className="detail-actions" role="group" aria-label="Verification controls">
-        <button
-          className="btn-action btn-verify"
-          disabled={isVerifying || isVerified}
-          onClick={() => onVerify?.('verified')}
-          aria-label={`Mark candidate vegetation as verified for ${hotspot.date}`}
-        >
-          {isVerified ? '✓ Verified' : '✓ Mark Verified'}
-        </button>
-
-        <button
-          className="btn-action btn-uncertain"
-          disabled={isVerifying || isUncertain}
-          onClick={() => onVerify?.('uncertain')}
-          aria-label={`Flag candidate vegetation as uncertain for ${hotspot.date}`}
-        >
-          {isUncertain ? '⚑ Uncertain' : '⚑ Flag Uncertain'}
-        </button>
-
-        <button
-          className="btn-action btn-reject"
-          disabled={isVerifying || isRejected}
-          onClick={() => onVerify?.('rejected')}
-          aria-label={`Reject candidate vegetation for ${hotspot.date}`}
-        >
-          {isRejected ? '✕ Rejected' : '✕ Reject'}
-        </button>
-      </div>
+      <VerifyControls
+        currentStatus={hotspot.verification_status}
+        date={hotspot.date}
+        isVerifying={isVerifying}
+        onVerify={onVerify}
+      />
     </aside>
   );
 };

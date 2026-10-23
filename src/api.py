@@ -100,12 +100,15 @@ def verify():
     date     = body.get("date")
     verified = body.get("verified")
     patch_id = body.get("patch_id")   # optional
+    status   = body.get("status")     # optional: "verified" | "uncertain" | "rejected"
 
-    if date is None or verified is None:
-        abort(400, description="'date' and 'verified' are required")
+    if date is None:
+        abort(400, description="'date' is required")
+    if verified is None and status is None:
+        abort(400, description="Either 'verified' or 'status' is required")
 
     results = _load_results()
-    results = apply_verification(results, date, patch_id, bool(verified))
+    results = apply_verification(results, date, patch_id, bool(verified), status=status)
     _save_results(results)
 
     updated = next((r for r in results if r.get("date") == date), None)

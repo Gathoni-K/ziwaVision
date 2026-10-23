@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  ZiwaVision — Visual Hotspot Verification
+  Lambda (Python 3.12) + API Gateway + S3 static dashboard.
+  OpenCV AI Competition 2026, powered by AWS.
+
+Parameters:
+  BucketName:
+    Type: String
+    Description: Unique S3 bucket name for the dashboard + results data
+    Default: ziwavision-dashboard
+
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, dev]
+
+Globals:
+  Function:
+    Timeout: 30
+    MemorySize: 512
+    Runtime: python3.12
+    # For Graviton benchmark, change Architectures to [arm64]
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        RESULTS_BUCKET: !Ref BucketName
+        ENVIRONMENT:    !Ref Environment
+
+Resources:
+
+  # ── S3 bucket: static dashboard + results data ────────────────────────────
+  DashboardBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref BucketName
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: index.html
+      CorsConfiguration:
+        CorsRules:
+          - AllowedHeaders: ['*']
+            AllowedMethods: [GET, PUT, POST, HEAD]
+            AllowedOrigins: ['*']
+            MaxAge: 3600
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:       false
+        BlockPublicPolicy:     false
+        IgnorePublicAcls:      false
+        RestrictPublicBuckets: false
+
+  DashboardBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DashboardBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub 'arn:aws:s3:::${BucketName}/*'
+
+  # ── IAM role for the Lambda ───────────────────────────────────────────────
+  ApiLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: S3ReadWrite
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:aws:s3:::${BucketName}'
+                  - !Sub 'arn:aws:s3:::${BucketName}/*'
+
+  # ── Lambda function: Flask API via Mangum ─────────────────────────────────
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'ziwavision-api-${Environment}'
+      CodeUri: ../src/
+      Handler: api.handler
+      Role: !GetAtt ApiLambdaRole.Arn
+      Description: ZiwaVision REST API — hotspots, overlays, verify
+      Events:
+        ApiRoot:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /{proxy+}
+            Method: ANY
+        ApiHealth:
+          Type: Api
+          Properties:
+            RestApiId: !Ref ApiGateway
+            Path: /health
+            Method: GET
+
+  # ── API Gateway ───────────────────────────────────────────────────────────
+  ApiGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub 'ziwavision-api-${Environment}'
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+
+Outputs:
+  DashboardUrl:
+    Description: S3 website URL for the dashboard
+    Value: !GetAtt DashboardBucket.WebsiteURL
+
+  ApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
+
+  BucketName:
+    Description: S3 bucket name
+    Value: !Ref BucketName

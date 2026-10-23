@@ -159,7 +159,9 @@ def main():
     if ref_bands is not None:
         r_red, r_nir, r_green, r_blue, r_scl = ref_bands
         r_ndvi  = ndvi_of(r_red, r_nir)
-        r_lake  = lake_mask(r_scl) or ref_lake
+        r_lake  = lake_mask(r_scl)
+        if r_lake is None:
+            r_lake = ref_lake
         r_cands = candidates_mask(r_lake, r_ndvi, r_scl, erode_shore_px=7)
 
         reference_mask = build_reference_mask(r_cands, save_path=REF_MASK_PATH)
@@ -198,7 +200,9 @@ def main():
         red, nir, green, blue, scl = bands
 
         # Use the multi-date reference lake if available, else per-scene lake
-        lm = lake_mask(scl) or ref_lake
+        lm = lake_mask(scl)
+        if lm is None:
+            lm = ref_lake
 
         # ── vision ────────────────────────────────────────────────────────────
         sv = detect_patches(

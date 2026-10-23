@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ZiwaVision — Visual Hotspot Verification · Lake Victoria</title>
+  <meta name="description"
+    content="ZiwaVision monitors Lake Victoria Sentinel-2 imagery to detect and verify candidate floating vegetation patches. Built with OpenCV 5 for the OpenCV AI Competition 2026." />
+  <meta property="og:title" content="ZiwaVision: Visual Hotspot Verification" />
+  <meta property="og:description"
+    content="Satellite-based candidate floating vegetation detection on Lake Victoria. Part of the ZiwaClear initiative." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" type="image/jpeg" href="logo.jpg" />
+</head>
+<body>
+
+  <!-- ── Header ──────────────────────────────────────────────────────────── -->
+  <header class="header" role="banner">
+    <img src="logo.jpg" alt="ZiwaVision logo" class="header-logo" />
+    <div class="header-titles">
+      <h1>ZiwaVision</h1>
+      <p>Visual Hotspot Verification · Lake Victoria</p>
+    </div>
+    <div class="header-spacer"></div>
+    <div class="header-pill" id="api-status-pill" aria-live="polite">
+      <span class="dot" id="api-dot"></span>
+      <span id="api-status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- ── App layout ──────────────────────────────────────────────────────── -->
+  <main class="app-layout" id="main-content">
+
+    <!-- ── Left: stats + table ───────────────────────────────────────────── -->
+    <section aria-label="Hotspot overview">
+
+      <!-- Stats row -->
+      <div class="stats-row" id="stats-row" role="region" aria-label="Summary statistics">
+        <div class="stat-card">
+          <div class="label">Scenes Processed</div>
+          <div class="value" id="stat-scenes">—</div>
+          <div class="sub">clear observations</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Candidate Patches</div>
+          <div class="value" id="stat-patches">—</div>
+          <div class="sub">total detected</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Total Area</div>
+          <div class="value" id="stat-area">—</div>
+          <div class="sub">hectares (est.)</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Needs Review</div>
+          <div class="value" id="stat-review">—</div>
+          <div class="sub">awaiting verification</div>
+        </div>
+      </div>
+
+      <!-- Table panel -->
+      <div class="table-panel">
+        <div class="panel-header">
+          <h2>Observation Log</h2>
+          <span class="count-badge" id="row-count">0 scenes</span>
+          <div class="spacer"></div>
+          <input
+            type="search"
+            id="filter-input"
+            class="filter-input"
+            placeholder="Filter by date or status…"
+            aria-label="Filter hotspots"
+          />
+        </div>
+
+        <div class="table-wrap" role="region" aria-label="Hotspot table">
+          <div id="table-container">
+            <div class="loading-state" id="loading-state">
+              <div class="spinner" role="status" aria-label="Loading"></div>
+              <p>Fetching hotspot data…</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Right: detail panel ───────────────────────────────────────────── -->
+    <aside class="detail-panel empty" id="detail-panel" aria-label="Scene detail">
+      <div class="empty-icon" aria-hidden="true">🛰️</div>
+      <p>Select a scene to view details and verify detections</p>
+    </aside>
+
+  </main>
+
+  <!-- ── Toast container ─────────────────────────────────────────────────── -->
+  <div class="toast-container" id="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

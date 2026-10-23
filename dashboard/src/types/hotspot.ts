@@ -1,0 +1,80 @@
+/**
+ * Types matching the ZiwaVision API responses and DynamoDB schema.
+ *
+ * Language rule: unverified detections are strictly "candidate floating vegetation",
+ * never described as "hyacinth" until human verified.
+ */
+
+export type VerificationStatus =
+  | 'needs_review'
+  | 'verified'
+  | 'uncertain'
+  | 'rejected'
+  | 'skipped';
+
+export type AgentAction =
+  | 'request_human_verification'
+  | 'process_another_observation'
+  | 'flag_uncertain';
+
+export interface PatchDetail {
+  patch_id: number;
+  area_ha: number;
+  centroid_latlon: [number, number]; // [lat, lon]
+  centroid_px: [number, number];     // [row, col]
+  mean_ndvi: number;
+  ndvi_fraction: number;
+  scl_veg_fraction: number;
+  confidence: number;
+  reference_iou?: number;
+  in_reference?: boolean;
+  verified?: boolean;
+}
+
+export interface Hotspot {
+  scene_id: string;
+  date: string; // YYYY-MM-DD
+  location: string;
+  bbox: [number, number, number, number]; // [W, S, E, N]
+  image_quality: number; // 0..1
+  cloud_fraction: number;
+  unclassified_fraction: number;
+  n_patches: number;
+  total_area_ha: number;
+  lake_area_ha: number;
+  mean_patch_confidence: number;
+  scene_iou: number;
+  mean_patch_iou: number;
+  n_in_reference: number;
+  action: AgentAction;
+  agent_reason: string;
+  verification_status: VerificationStatus;
+  decided_at: string;
+  overlay_path?: string;
+  overlay_filename?: string;
+  patch_details: PatchDetail[];
+  verified_at?: string;
+}
+
+export interface TraceEntry {
+  scene_id: string;
+  date: string;
+  action: AgentAction;
+  reason: string;
+  decided_at: string;
+  image_quality: number;
+  detection_confidence: number;
+  reference_iou: number;
+}
+
+export interface VerifyPayload {
+  date: string;
+  verified: boolean;
+  patch_id?: number | null;
+  status?: VerificationStatus;
+}
+
+export interface VerifyResponse {
+  ok: boolean;
+  updated: Hotspot;
+}

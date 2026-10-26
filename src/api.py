@@ -37,6 +37,7 @@ import hmac
 import json
 import os
 import sys
+import uuid
 from typing import Optional
 
 from flask import Flask, abort, jsonify, request, send_file
@@ -63,18 +64,20 @@ PORT          = int(os.environ.get("PORT", 5050))
 # explicit configuration.  The default value is for local *development only*
 # and must never reach a production deployment.
 _RAW_API_KEY = os.environ.get("ZIWAVISION_API_KEY") or os.environ.get("VERIFY_API_KEY")
-VERIFY_API_KEY: Optional[str] = _RAW_API_KEY  # None → not configured
+# Key must be explicitly set and at least 16 chars; fails closed otherwise
+VERIFY_API_KEY: Optional[str] = _RAW_API_KEY.strip() if (_RAW_API_KEY and len(_RAW_API_KEY.strip()) >= 16) else None
 _AUTH_CONFIGURED = VERIFY_API_KEY is not None
 
 if not _AUTH_CONFIGURED:
     print(
-        "WARNING: ZIWAVISION_API_KEY is not set. "
-        "Human-review endpoints will return 503 until the key is configured."
+        "WARNING: ZIWAVISION_API_KEY is not set or has fewer than 16 characters. "
+        "Human-review endpoints will fail closed (HTTP 503) until properly configured."
     )
 
 # S3 — set by the SAM template via environment variables.
 RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")
 S3_RESULTS_KEY = "data/results.json"
+S3_RUNS_PREFIX = "runs/"
 
 # Autonomous agent statuses (never verified / rejected)
 _AGENT_STATUSES = frozenset(
@@ -84,6 +87,11 @@ _AGENT_STATUSES = frozenset(
 )
 # Statuses only a human reviewer may set
 _HUMAN_FINAL_STATUSES = frozenset({"verified", "rejected"})
+
+# Only pending candidate detections can receive human review
+_ELIGIBLE_FOR_VERIFICATION = frozenset(
+    {"needs_verification", "needs_review", "candidate", "uncertain"}
+)
 
 # Maximum reviewer notes length
 _NOTES_MAX_LEN = 1000
@@ -130,6 +138,57 @@ def _save_results(results: list) -> None:
     os.makedirs(os.path.dirname(RESULTS_PATH), exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         f.write(payload)
+
+
+RUNS_DIR = os.path.join(OUTPUTS_DIR, "runs")
+
+
+def _save_run(run_data: dict) -> None:
+    run_id = run_data["run_id"]
+    payload = json.dumps(run_data, indent=2)
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            s3.put_object(
+                Bucket=RESULTS_BUCKET,
+                Key=f"{S3_RUNS_PREFIX}{run_id}.json",
+                Body=payload.encode("utf-8"),
+                ContentType="application/json",
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"S3 _save_run failed ({exc}); saving locally")
+    os.makedirs(RUNS_DIR, exist_ok=True)
+    with open(os.path.join(RUNS_DIR, f"{run_id}.json"), "w") as f:
+        f.write(payload)
+
+
+def _load_run(run_id: str) -> Optional[dict]:
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            obj = s3.get_object(Bucket=RESULTS_BUCKET, Key=f"{S3_RUNS_PREFIX}{run_id}.json")
+            return json.loads(obj["Body"].read().decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            pass
+    path = os.path.join(RUNS_DIR, f"{run_id}.json")
+    if os.path.exists(path):
+        with open(path) as f:
+            return json.load(f)
+    return None
+
+
+def _list_runs() -> list:
+    runs = []
+    if os.path.exists(RUNS_DIR):
+        for fname in sorted(os.listdir(RUNS_DIR), reverse=True):
+            if fname.endswith(".json"):
+                try:
+                    with open(os.path.join(RUNS_DIR, fname)) as f:
+                        runs.append(json.load(f))
+                except Exception:
+                    continue
+    return runs
+
 
 
 # ── stable hotspot ID ──────────────────────────────────────────────────────────
@@ -356,16 +415,30 @@ def verify_hotspot(hotspot_id: str):
             "authenticated": True,
         }), 200
 
-    # Conflicting re-review requires explicit acknowledgement
-    if prev_status in _HUMAN_FINAL_STATUSES and not re_review:
+    # Enforce allowed state transitions:
+    # 1. Final human decision (verified / rejected) may be updated only with explicit re_review flag
+    if prev_status in _HUMAN_FINAL_STATUSES:
+        if not re_review:
+            return jsonify({
+                "ok": False,
+                "error": (
+                    f"Hotspot already has a final human-review status ({prev_status!r}). "
+                    "Set 're_review: true' in the request body to override."
+                ),
+                "current_status": prev_status,
+            }), 409
+    # 2. Only pending candidate detections are eligible for human verification
+    elif prev_status not in _ELIGIBLE_FOR_VERIFICATION:
         return jsonify({
             "ok": False,
             "error": (
-                f"Hotspot already has a final human-review status ({prev_status!r}). "
-                "Set 're_review: true' in the request body to override."
+                f"Hotspot {hotspot_id!r} with status {prev_status!r} is not eligible for human verification. "
+                f"Only pending candidate detections ({sorted(_ELIGIBLE_FOR_VERIFICATION)}) can be verified or rejected. "
+                "Records with status 'skipped', 'no_candidate', or failure states cannot receive human review."
             ),
             "current_status": prev_status,
-        }), 409
+            "eligible_statuses": sorted(_ELIGIBLE_FOR_VERIFICATION),
+        }), 422
 
     # Apply
     date = entry.get("date", "")
@@ -447,6 +520,28 @@ def verify_legacy():
         resolved_status = "verified" if verified else "uncertain"
 
     results = _load_results()
+    entry = next((r for r in results if r.get("date") == date), None)
+    if entry is None:
+        abort(404, description=f"No result found for date {date!r}")
+
+    prev_status = entry.get("verification_status", "unknown")
+    if prev_status in _HUMAN_FINAL_STATUSES and not body.get("re_review"):
+        return jsonify({
+            "ok": False,
+            "error": f"Hotspot already has a final human-review status ({prev_status!r}). Set 're_review: true' to override.",
+            "current_status": prev_status,
+        }), 409
+    if prev_status not in _ELIGIBLE_FOR_VERIFICATION and prev_status not in _HUMAN_FINAL_STATUSES:
+        return jsonify({
+            "ok": False,
+            "error": (
+                f"Hotspot on date {date!r} with status {prev_status!r} is not eligible for human verification. "
+                f"Only pending candidate detections ({sorted(_ELIGIBLE_FOR_VERIFICATION)}) can be verified or rejected."
+            ),
+            "current_status": prev_status,
+            "eligible_statuses": sorted(_ELIGIBLE_FOR_VERIFICATION),
+        }), 422
+
     results = apply_verification(results, date, patch_id, bool(verified), status=resolved_status)
     _save_results(results)
 
@@ -472,15 +567,66 @@ def verify_legacy():
     })
 
 
-# ── inspect ────────────────────────────────────────────────────────────────────
+# ── inspect & asynchronous runs ────────────────────────────────────────────────
+
+def _run_inspection_worker(run_id: str, target_date: str, bbox: Optional[list]) -> None:
+    try:
+        import inspect
+        sig = inspect.signature(run_live_inspection)
+        if "run_id" in sig.parameters:
+            result = run_live_inspection(target_date, bbox=bbox, run_id=run_id)
+        else:
+            result = run_live_inspection(target_date, bbox=bbox)
+        if result.get("ok"):
+            hotspot_entry = result["hotspot"]
+            results = _load_results()
+            existing_idx = next((i for i, r in enumerate(results) if r.get("date") == target_date), -1)
+            if existing_idx >= 0:
+                results[existing_idx] = hotspot_entry
+            else:
+                results.append(hotspot_entry)
+            _save_results(results)
+            _save_run({
+                "run_id": run_id,
+                "date": target_date,
+                "bbox": bbox,
+                "status": "completed",
+                "completed_at": _utc_now(),
+                "result": result,
+                "hotspot": hotspot_entry,
+                "error": None,
+            })
+        else:
+            _save_run({
+                "run_id": run_id,
+                "date": target_date,
+                "bbox": bbox,
+                "status": "failed",
+                "completed_at": _utc_now(),
+                "result": result,
+                "hotspot": None,
+                "error": result.get("error", "Inspection failed"),
+            })
+    except Exception as exc:  # noqa: BLE001
+        _save_run({
+            "run_id": run_id,
+            "date": target_date,
+            "bbox": bbox,
+            "status": "failed",
+            "completed_at": _utc_now(),
+            "result": None,
+            "hotspot": None,
+            "error": str(exc),
+        })
+
 
 @app.post("/api/inspect")
 @app.post("/api/inspect/<date>")
 def inspect_scene(date: Optional[str] = None):
     """
     Active Inspector endpoint connected to live Earth Search → satellite asset → OpenCV pipeline.
-    Never substitutes demo data silently if live access fails.
-    Returns explicit failure status with persisted trace records.
+    Supports asynchronous execution with durable job tracking via /api/runs/<run_id>.
+    Returns 202 Accepted with poll_url unless sync=true is explicitly requested.
     """
     body = request.get_json(silent=True) or {}
     target_date = date or body.get("date")
@@ -488,22 +634,61 @@ def inspect_scene(date: Optional[str] = None):
         abort(400, description="'date' parameter is required (in URL or JSON body {'date': 'YYYY-MM-DD'})")
 
     bbox = body.get("bbox")
+    is_sync = (
+        request.args.get("sync", "").lower() in ("true", "1")
+        or body.get("sync") is True
+        or app.config.get("TESTING", False)
+    )
 
-    result = run_live_inspection(target_date, bbox=bbox)
+    run_id = uuid.uuid4().hex[:12]
+    run_data = {
+        "run_id": run_id,
+        "date": target_date,
+        "bbox": bbox,
+        "status": "running",
+        "started_at": _utc_now(),
+        "completed_at": None,
+        "result": None,
+        "hotspot": None,
+        "error": None,
+    }
+    _save_run(run_data)
 
-    if result.get("ok"):
-        hotspot_entry = result["hotspot"]
-        results = _load_results()
-        existing_idx = next((i for i, r in enumerate(results) if r.get("date") == target_date), -1)
-        if existing_idx >= 0:
-            results[existing_idx] = hotspot_entry
-        else:
-            results.append(hotspot_entry)
-        _save_results(results)
-        return jsonify(result), 200
+    if is_sync:
+        _run_inspection_worker(run_id, target_date, bbox)
+        final_run = _load_run(run_id) or run_data
+        if final_run.get("status") == "completed":
+            return jsonify(final_run["result"]), 200
+        res = final_run.get("result") or {"ok": False, "error": final_run.get("error")}
+        status_code = 404 if (final_run.get("result") or {}).get("status") == "scene_unavailable" else 502
+        return jsonify(res), status_code
 
-    status_code = 404 if result.get("status") == "scene_unavailable" else 502
-    return jsonify(result), status_code
+    import threading
+    t = threading.Thread(target=_run_inspection_worker, args=(run_id, target_date, bbox), daemon=True)
+    t.start()
+
+    return jsonify({
+        "ok": True,
+        "run_id": run_id,
+        "status": "running",
+        "date": target_date,
+        "poll_url": f"/api/runs/{run_id}",
+    }), 202
+
+
+@app.get("/api/runs/<run_id>")
+def get_run(run_id: str):
+    """Retrieve the current state and results of an inspection run."""
+    run = _load_run(run_id)
+    if run is None:
+        return jsonify({"ok": False, "error": f"Run {run_id!r} not found."}), 404
+    return jsonify(run), 200
+
+
+@app.get("/api/runs")
+def list_runs():
+    """List recent inspection runs so active, completed, and failed jobs are observable."""
+    return jsonify(_list_runs()), 200
 
 
 # ── traces ─────────────────────────────────────────────────────────────────────

@@ -80,6 +80,9 @@ class AnalyzeEvidence:
     candidate_pixels: int
     open_water_pixels: int
     message: str
+    open_water_area_ha: float = 0.0
+    patch_area_ha: float = 0.0
+    patch_pixels: int = 0
 
 
 @dataclass
@@ -137,6 +140,10 @@ class HumanEvidence:
     candidate_pixels: int
     candidate_area_ha: float
     message: str
+    open_water_pixels: int = 0
+    open_water_area_ha: float = 0.0
+    patch_pixels: int = 0
+    patch_area_ha: float = 0.0
 
 
 def _open_water(lake: np.ndarray, erosion_px: int = 7) -> np.ndarray:
@@ -184,16 +191,23 @@ def analyze_scene(context: SceneContext) -> AnalyzeEvidence:
     mask = open_water & (
         (ndvi_of(context.red, context.nir) > 0.30) | (context.scl == 4)
     )
+    open_w_px = int(mask.sum())
+    open_w_ha = round(open_w_px * 0.01, 2)
+    patch_ha = round(float(scene.candidate_area_ha), 2)
+    patch_px = int(round(patch_ha / 0.01))
     return AnalyzeEvidence(
         status=EvidenceStatus.OK,
         scene=scene,
         candidate_mask=mask,
-        candidate_pixels=int(mask.sum()),
-        open_water_pixels=int(open_water.sum()),
+        candidate_pixels=patch_px if patch_px > 0 else open_w_px,
+        open_water_pixels=open_w_px,
+        open_water_area_ha=open_w_ha,
+        patch_area_ha=patch_ha,
+        patch_pixels=patch_px,
         message=(
             f"OpenCV detected {len(scene.patches)} patch(es), "
-            f"{int(mask.sum())} candidate pixels, "
-            f"{scene.candidate_area_ha:.2f} ha estimated by connected patches. "
+            f"{patch_px} connected patch pixels ({patch_ha:.2f} ha; "
+            f"open-water core: {open_w_px} px / {open_w_ha:.2f} ha). "
             f"{detector_note}"
         ),
     )
@@ -300,20 +314,34 @@ def fetch_alternate_scene(context: SceneContext, used_dates: Sequence[str]) -> F
 
 
 def request_human_verification(analyze: AnalyzeEvidence) -> HumanEvidence:
-    pixels = int(analyze.candidate_mask.sum())
-    if pixels == 0:
+    open_water_px = analyze.open_water_pixels
+    open_water_ha = getattr(analyze, "open_water_area_ha", round(open_water_px * 0.01, 2))
+    patch_ha = getattr(analyze, "patch_area_ha", round(float(analyze.scene.candidate_area_ha), 2))
+    patch_px = getattr(analyze, "patch_pixels", int(round(patch_ha / 0.01)))
+
+    if patch_px == 0 and open_water_px == 0:
         return HumanEvidence(
             status=EvidenceStatus.SKIPPED,
             pending=False,
             candidate_pixels=0,
             candidate_area_ha=0.0,
+            open_water_pixels=0,
+            open_water_area_ha=0.0,
+            patch_pixels=0,
+            patch_area_ha=0.0,
             message="No candidate pixels exist; human verification is not pending.",
         )
-    area = pixels * 0.01
     return HumanEvidence(
         status=EvidenceStatus.PENDING,
         pending=True,
-        candidate_pixels=pixels,
-        candidate_area_ha=area,
-        message=f"Human verification pending for {pixels} candidate pixels ({area:.2f} ha).",
+        candidate_pixels=patch_px if patch_px > 0 else open_water_px,
+        candidate_area_ha=patch_ha if patch_ha > 0 else open_water_ha,
+        open_water_pixels=open_water_px,
+        open_water_area_ha=open_water_ha,
+        patch_pixels=patch_px,
+        patch_area_ha=patch_ha,
+        message=(
+            f"Human verification pending: total candidate area={patch_ha:.2f} ha ({patch_px} px); "
+            f"open-water core={open_water_ha:.2f} ha ({open_water_px} px)."
+        ),
     )

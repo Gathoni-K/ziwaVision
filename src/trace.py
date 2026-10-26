@@ -42,15 +42,61 @@ class TraceRecord:
         return asdict(self)
 
 
+RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")
+
+
+def _s3_client():
+    import boto3  # noqa: PLC0415
+    return boto3.client("s3")
+
+
 def append_trace(record: TraceRecord, traces_dir: str = _DEFAULT_TRACES_DIR) -> str:
+    line = json.dumps(record.to_dict(), sort_keys=True) + "\n"
     os.makedirs(traces_dir, exist_ok=True)
     path = os.path.join(traces_dir, f"{record.date}.jsonl")
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record.to_dict(), sort_keys=True) + "\n")
+        handle.write(line)
+
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            key = f"traces/{record.date}.jsonl"
+            try:
+                existing = s3.get_object(Bucket=RESULTS_BUCKET, Key=key)["Body"].read().decode("utf-8")
+            except Exception:
+                existing = ""
+            s3.put_object(
+                Bucket=RESULTS_BUCKET,
+                Key=key,
+                Body=(existing + line).encode("utf-8"),
+                ContentType="application/x-ndjson",
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"S3 append_trace failed ({exc}); saved locally to {path}")
+
     return path
 
 
 def load_traces(date: str, traces_dir: str = _DEFAULT_TRACES_DIR) -> List[Dict[str, Any]]:
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            key = f"traces/{date}.jsonl"
+            obj = s3.get_object(Bucket=RESULTS_BUCKET, Key=key)
+            lines = obj["Body"].read().decode("utf-8").splitlines()
+            records: List[Dict[str, Any]] = []
+            for line in lines:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        continue
+            if records:
+                return records
+        except Exception:  # noqa: BLE001
+            pass
+
     path = os.path.join(traces_dir, f"{date}.jsonl")
     if not os.path.exists(path):
         return []
@@ -64,4 +110,5 @@ def load_traces(date: str, traces_dir: str = _DEFAULT_TRACES_DIR) -> List[Dict[s
                 except json.JSONDecodeError:
                     continue
     return records
+
 

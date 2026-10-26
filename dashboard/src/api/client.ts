@@ -18,11 +18,8 @@ import { Hotspot, InspectResponse, TraceEntry, VerifyPayload, VerifyResponse } f
  */
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5050').replace(/\/$/, '');
 
-// NOTE: embedding any secret in the compiled frontend is insecure.
-// VITE_API_KEY is provided only for local development convenience.
-// Production deployments must authenticate through a server-side proxy
-// so that the reviewer key is never exposed to browser clients.
-export const API_KEY = import.meta.env.VITE_API_KEY || 'ziwa-inspector-secret-2026';
+// Do not embed a hardcoded secret into the public client bundle.
+export const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 export async function checkHealth(): Promise<boolean> {
   try {
@@ -140,10 +137,31 @@ export async function inspectScene(date: string, bbox?: number[]): Promise<Inspe
     body: JSON.stringify({ date, bbox }),
   });
   const data = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  if (res.status === 202 && data.run_id) {
+    return pollRun(data.run_id);
+  }
   if (!res.ok || !data.ok) {
     throw new Error(data.error || `Inspection failed with HTTP ${res.status}`);
   }
   return data;
+}
+
+export async function pollRun(runId: string, maxAttempts = 60, intervalMs = 2000): Promise<InspectResponse> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+    const res = await fetch(`${API_BASE}/api/runs/${encodeURIComponent(runId)}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) continue;
+    const run = await res.json();
+    if (run.status === 'completed' && run.result) {
+      return run.result;
+    }
+    if (run.status === 'failed') {
+      throw new Error(run.error || 'Inspection run failed');
+    }
+  }
+  throw new Error(`Inspection timed out polling run ${runId}`);
 }
 
 export async function fetchTraces(date: string): Promise<TraceEntry[]> {

@@ -192,9 +192,13 @@ def _numbers(state: InspectorState) -> Dict[str, float]:
             "lake_area_ratio": state.quality.lake_area_ratio,
         })
     if state.analysis:
+        open_w_px = getattr(state.analysis, "open_water_pixels", 0)
+        open_w_ha = getattr(state.analysis, "open_water_area_ha", round(open_w_px * 0.01, 2))
         result.update({
             "candidate_pixels": float(state.analysis.candidate_pixels),
             "candidate_area_ha": state.analysis.scene.candidate_area_ha,
+            "open_water_pixels": float(open_w_px),
+            "open_water_area_ha": float(open_w_ha),
             "n_patches": float(len(state.analysis.scene.patches)),
         })
     if state.alternative:
@@ -790,6 +794,8 @@ def run_live_inspection(
         "unclassified_fraction": round(float(assessment.unclassified_fraction), 4),
         "n_patches": len(scene_vision.patches),
         "total_area_ha": round(float(scene_vision.candidate_area_ha), 2),
+        "open_water_area_ha": round(float(int(refined_mask.sum()) * 0.01), 2) if refined_mask is not None else 0.0,
+        "open_water_pixels": int(refined_mask.sum()) if refined_mask is not None else 0,
         "lake_area_ha": round(float(scene_vision.lake_area_ha), 2),
         "mean_patch_confidence": round(float(assessment.mean_patch_confidence), 3),
         "scene_iou": round(float(assessment.scene_iou), 4),

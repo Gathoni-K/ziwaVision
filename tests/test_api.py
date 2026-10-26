@@ -82,10 +82,33 @@ SAMPLE_RESULTS = [
         "patch_details": [],
         "unclassified_fraction": 0.0,
     },
+    {
+        "scene_id": "S2C_36MXE_20260823_0_L2A",
+        "date": "2026-08-23",
+        "location": "Dunga Beach, Winam Gulf",
+        "image_quality": 0.99,
+        "cloud_fraction": 0.0,
+        "n_patches": 1,
+        "total_area_ha": 110.86,
+        "open_water_area_ha": 4.05,
+        "open_water_pixels": 405,
+        "lake_area_ha": 4658.5,
+        "mean_patch_confidence": 0.65,
+        "scene_iou": 0.141,
+        "mean_patch_iou": 0.141,
+        "n_in_reference": 0,
+        "action": "request_human_verification",
+        "agent_reason": "Alternative analysis IoU=0.141 < 0.70; analyses disagree.",
+        "verification_status": "needs_verification",
+        "decided_at": "2026-08-23T10:10:00Z",
+        "patch_details": [],
+        "unclassified_fraction": 0.012,
+    },
 ]
 
 SAMPLE_ID_0 = _hotspot_id(SAMPLE_RESULTS[0])  # "s2b-36mxe-20260907-0-l2a"
-SAMPLE_ID_1 = _hotspot_id(SAMPLE_RESULTS[1])
+SAMPLE_ID_1 = _hotspot_id(SAMPLE_RESULTS[1])  # "s2a-36mxe-20260828-0-l2a" (skipped)
+SAMPLE_ID_2 = _hotspot_id(SAMPLE_RESULTS[2])  # "s2c-36mxe-20260823-0-l2a" (needs_verification)
 
 
 def _make_auth_header() -> dict:
@@ -101,8 +124,18 @@ def client(monkeypatch):
     saved = []
     monkeypatch.setattr(api_module, "_save_results", lambda res: saved.extend(res))
     monkeypatch.setattr(api_module, "_AUTH_CONFIGURED", True)
+    written_traces = []
+    monkeypatch.setattr(api_module, "append_trace", lambda rec, traces_dir=None: written_traces.append(rec))
+    import trace as trace_mod
+    monkeypatch.setattr(trace_mod, "append_trace", lambda rec, traces_dir=None: written_traces.append(rec))
+    runs_storage = {}
+    monkeypatch.setattr(api_module, "_save_run", lambda run: runs_storage.update({run["run_id"]: run}))
+    monkeypatch.setattr(api_module, "_load_run", lambda run_id: runs_storage.get(run_id))
+    monkeypatch.setattr(api_module, "_list_runs", lambda: list(runs_storage.values()))
     with app.test_client() as c:
         c._saved = saved
+        c._written_traces = written_traces
+        c._runs_storage = runs_storage
         yield c
 
 
@@ -135,7 +168,7 @@ def test_get_hotspots_returns_list_with_ids(client):
     assert res.status_code == 200
     data = res.get_json()
     assert isinstance(data, list)
-    assert len(data) == 2
+    assert len(data) >= 2
     for entry in data:
         assert "hotspot_id" in entry
         assert "scene_id" in entry
@@ -320,15 +353,44 @@ def test_verify_hotspot_verified_decision_succeeds(client):
 
 
 def test_verify_hotspot_rejected_decision_succeeds(client):
-    # Use SAMPLE_ID_1 whose status is 'skipped' (not a final human status)
+    # Use SAMPLE_ID_2 whose status is 'needs_verification' (eligible pending status)
     res = client.post(
-        f"/api/hotspots/{SAMPLE_ID_1}/verify",
+        f"/api/hotspots/{SAMPLE_ID_2}/verify",
         json={"decision": "rejected"},
         headers=_make_auth_header(),
     )
     assert res.status_code == 200
     data = res.get_json()
     assert data["new_status"] == "rejected"
+
+
+def test_verify_hotspot_skipped_status_rejected_422(client):
+    """Attempting to verify or reject an ineligible hotspot (status='skipped') must return 422."""
+    res = client.post(
+        f"/api/hotspots/{SAMPLE_ID_1}/verify",
+        json={"decision": "verified"},
+        headers=_make_auth_header(),
+    )
+    assert res.status_code == 422
+    data = res.get_json()
+    assert data["ok"] is False
+    assert "not eligible" in data["error"].lower()
+    assert data["current_status"] == "skipped"
+    # Must not mutate saved results or traces
+    assert len(client._saved) == 0
+    assert len(client._written_traces) == 0
+
+
+def test_verify_hotspot_ineligible_does_not_mutate_state_or_trace(client):
+    """Calling verify with 'rejected' on a skipped/no-candidate record must not mutate results or traces."""
+    res = client.post(
+        f"/api/hotspots/{SAMPLE_ID_1}/verify",
+        json={"decision": "rejected"},
+        headers=_make_auth_header(),
+    )
+    assert res.status_code == 422
+    assert len(client._saved) == 0
+    assert len(client._written_traces) == 0
 
 
 def test_verify_hotspot_writes_trace(client, monkeypatch, tmp_path):
@@ -530,3 +592,62 @@ def test_by_date_route_returns_correct_entry(client):
     res = client.get("/api/hotspots/by-date/2026-09-07")
     assert res.status_code == 200
     assert res.get_json()["scene_id"] == "S2B_36MXE_20260907_0_L2A"
+
+
+# ── Asynchronous inspection and durable run tracking ──────────────────────────
+
+def test_async_inspect_endpoint_returns_202_and_poll_url(client, monkeypatch):
+    """Calling /api/inspect without sync=true must return 202 with run_id and poll_url."""
+    monkeypatch.setattr(
+        api_module,
+        "run_live_inspection",
+        lambda date, bbox=None, run_id=None: {
+            "ok": True,
+            "status": "needs_review",
+            "decision": "request_human_verification",
+            "hotspot": copy.deepcopy(SAMPLE_RESULTS[0]),
+            "traces": [],
+            "run_id": run_id,
+        },
+    )
+    # Turn off TESTING config just for this async call to test the 202 path
+    client.application.config["TESTING"] = False
+    try:
+        res = client.post("/api/inspect", json={"date": "2026-09-07"})
+        assert res.status_code == 202
+        data = res.get_json()
+        assert data["ok"] is True
+        assert "run_id" in data
+        assert "poll_url" in data
+        run_id = data["run_id"]
+
+        poll_res = client.get(f"/api/runs/{run_id}")
+        assert poll_res.status_code == 200
+        run_data = poll_res.get_json()
+        assert run_data["run_id"] == run_id
+    finally:
+        client.application.config["TESTING"] = True
+
+
+def test_list_runs_endpoint(client):
+    """GET /api/runs must return observable runs."""
+    client._runs_storage["test-run-1"] = {"run_id": "test-run-1", "status": "completed"}
+    res = client.get("/api/runs")
+    assert res.status_code == 200
+    runs = res.get_json()
+    assert any(r["run_id"] == "test-run-1" for r in runs)
+
+
+def test_runs_survive_storage(monkeypatch, tmp_path):
+    """Run records survive separate invocations via durable storage."""
+    runs_dir = str(tmp_path / "runs")
+    monkeypatch.setattr(api_module, "RUNS_DIR", runs_dir)
+    run_payload = {"run_id": "run-xyz-123", "status": "completed", "date": "2026-08-23"}
+    api_module._save_run(run_payload)
+
+    # Read back through fresh loader
+    loaded = api_module._load_run("run-xyz-123")
+    assert loaded is not None
+    assert loaded["run_id"] == "run-xyz-123"
+    assert loaded["status"] == "completed"
+

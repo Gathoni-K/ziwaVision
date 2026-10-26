@@ -19,8 +19,8 @@ Parameters:
 
 Globals:
   Function:
-    Timeout: 30
-    MemorySize: 512
+    Timeout: 300
+    MemorySize: 1024
     Runtime: python3.12
     # For Graviton benchmark, change Architectures to [arm64]
     Architectures: [x86_64]

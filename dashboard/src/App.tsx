@@ -107,6 +107,9 @@ export const App: React.FC = () => {
         rejected: 'rejected ✕',
         needs_review: 'reset to needs review',
         skipped: 'skipped',
+        candidate: 'candidate identified',
+        needs_verification: 'pending human verification',
+        rejected_as_artefact: 'rejected as artefact',
       };
 
       addToast(

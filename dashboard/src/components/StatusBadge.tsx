@@ -11,6 +11,16 @@ const STATUS_CONFIG: Record<VerificationStatus, { label: string; icon: string; c
     icon: '⏳',
     className: 'badge-needs_review',
   },
+  needs_verification: {
+    label: 'Needs Verification',
+    icon: '⏳',
+    className: 'badge-needs_review',
+  },
+  candidate: {
+    label: 'Candidate',
+    icon: '🔍',
+    className: 'badge-uncertain',
+  },
   verified: {
     label: 'Verified',
     icon: '✓',
@@ -23,6 +33,11 @@ const STATUS_CONFIG: Record<VerificationStatus, { label: string; icon: string; c
   },
   rejected: {
     label: 'Rejected',
+    icon: '✕',
+    className: 'badge-rejected',
+  },
+  rejected_as_artefact: {
+    label: 'Artefact',
     icon: '✕',
     className: 'badge-rejected',
   },

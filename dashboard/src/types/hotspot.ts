@@ -1,16 +1,30 @@
 /**
- * Types matching the ZiwaVision API responses and DynamoDB schema.
+ * Types matching the ZiwaVision API responses.
  *
  * Language rule: unverified detections are strictly "candidate floating vegetation",
  * never described as "hyacinth" until human verified.
+ *
+ * Status contract:
+ *   Autonomous agent may set: candidate | needs_verification | uncertain |
+ *                             rejected_as_artefact | needs_review | skipped
+ *   Human reviewer may set:   verified | rejected (via authenticated endpoint only)
  */
 
+/** All statuses the agent or a human reviewer may assign. */
 export type VerificationStatus =
-  | 'needs_review'
-  | 'verified'
+  // Agent-assigned (autonomous):
+  | 'candidate'
+  | 'needs_verification'
+  | 'needs_review'         // legacy alias for needs_verification
   | 'uncertain'
-  | 'rejected'
-  | 'skipped';
+  | 'rejected_as_artefact'
+  | 'skipped'
+  // Human-assigned only (via authenticated verify endpoint):
+  | 'verified'
+  | 'rejected';
+
+/** The two statuses only a human reviewer may set. */
+export type HumanDecision = 'verified' | 'rejected';
 
 export type AgentAction =
   | 'request_human_verification'
@@ -32,6 +46,8 @@ export interface PatchDetail {
 }
 
 export interface Hotspot {
+  /** Stable URL-safe ID derived from scene_id. Injected by the API. */
+  hotspot_id?: string;
   scene_id: string;
   date: string; // YYYY-MM-DD
   location: string;
@@ -54,6 +70,9 @@ export interface Hotspot {
   overlay_filename?: string;
   patch_details: PatchDetail[];
   verified_at?: string;
+  reviewer_notes?: string;
+  /** Attached inspection trace — present on GET /api/hotspots/<id> responses. */
+  trace?: TraceEntry[];
 }
 
 export interface TraceEntry {
@@ -86,6 +105,10 @@ export interface VerifyResponse {
   ok: boolean;
   updated: Hotspot;
   authenticated?: boolean;
+  previous_status?: VerificationStatus;
+  new_status?: VerificationStatus;
+  reviewer_id?: string;
+  note?: string;
 }
 
 export interface InspectResponse {

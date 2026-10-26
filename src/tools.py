@@ -41,6 +41,37 @@ class SceneContext:
     alternate_scenes: Sequence["SceneContext"] = field(default_factory=tuple)
 
 
+def validate_context_shapes(context: SceneContext) -> Optional[Dict[str, Any]]:
+    """
+    Validate array dimensions and alignment before analysis.
+    Returns None if shapes match; returns a mismatch summary dict if incompatible.
+    """
+    if not hasattr(context.red, "shape"):
+        return {"error": "context.red has no shape attribute"}
+
+    expected_shape = tuple(context.red.shape)
+    shapes = {
+        "red": tuple(context.red.shape) if hasattr(context.red, "shape") else None,
+        "nir": tuple(context.nir.shape) if hasattr(context.nir, "shape") else None,
+        "green": tuple(context.green.shape) if hasattr(context.green, "shape") else None,
+        "blue": tuple(context.blue.shape) if hasattr(context.blue, "shape") else None,
+        "scl": tuple(context.scl.shape) if hasattr(context.scl, "shape") else None,
+        "lake_filled": tuple(context.lake_filled.shape) if hasattr(context.lake_filled, "shape") else None,
+        "reference_lake": tuple(context.reference_lake.shape) if hasattr(context.reference_lake, "shape") else None,
+    }
+    if context.reference_mask is not None:
+        shapes["reference_mask"] = tuple(context.reference_mask.shape) if hasattr(context.reference_mask, "shape") else None
+
+    mismatches = {name: s for name, s in shapes.items() if s != expected_shape}
+    if mismatches:
+        return {
+            "expected_shape": list(expected_shape),
+            "actual_shapes": {k: list(v) if v is not None else None for k, v in shapes.items()},
+            "mismatches": {k: list(v) if v is not None else None for k, v in mismatches.items()},
+        }
+    return None
+
+
 @dataclass
 class AnalyzeEvidence:
     status: EvidenceStatus
@@ -112,7 +143,8 @@ def _open_water(lake: np.ndarray, erosion_px: int = 7) -> np.ndarray:
     kernel = cv2.getStructuringElement(
         cv2.MORPH_ELLIPSE, (2 * erosion_px + 1, 2 * erosion_px + 1)
     )
-    return cv2.erode(lake.astype(np.uint8), kernel) == 1
+    binary_lake = (lake > 0).astype(np.uint8)
+    return cv2.erode(binary_lake, kernel) == 1
 
 
 def analyze_scene(context: SceneContext) -> AnalyzeEvidence:
@@ -169,12 +201,20 @@ def analyze_scene(context: SceneContext) -> AnalyzeEvidence:
 
 def assess_quality(context: SceneContext) -> QualityEvidence:
     quality, cloud, unclassified = image_quality_score(context.scl)
-    current_pixels = int(context.lake_filled.sum())
-    reference_pixels = int(context.reference_lake.sum())
+    current_pixels = int((context.lake_filled > 0).sum())
+    reference_pixels = int((context.reference_lake > 0).sum())
     ratio = current_pixels / reference_pixels if reference_pixels else 0.0
-    stable = 0.85 <= ratio <= 1.15
+    stable = (0.85 <= ratio <= 1.15) if (reference_pixels > 0 and current_pixels > 0) else False
+    status = EvidenceStatus.OK if (reference_pixels > 0 and current_pixels > 0) else EvidenceStatus.UNAVAILABLE
+    msg = (
+        f"cloud={cloud:.4f}, unclassified={unclassified:.4f}, "
+        f"quality={quality:.3f}, lake={current_pixels}px, "
+        f"reference={reference_pixels}px, ratio={ratio:.3f}."
+    )
+    if current_pixels == 0 or reference_pixels == 0:
+        msg = f"Empty lake mask ({current_pixels}px current, {reference_pixels}px reference); " + msg
     return QualityEvidence(
-        status=EvidenceStatus.OK,
+        status=status,
         cloud_fraction=float(cloud),
         unclassified_fraction=float(unclassified),
         image_quality=float(quality),
@@ -182,11 +222,7 @@ def assess_quality(context: SceneContext) -> QualityEvidence:
         reference_lake_pixels=reference_pixels,
         lake_area_ratio=ratio,
         stable=stable,
-        message=(
-            f"cloud={cloud:.4f}, unclassified={unclassified:.4f}, "
-            f"quality={quality:.3f}, lake={current_pixels}px, "
-            f"reference={reference_pixels}px, ratio={ratio:.3f}."
-        ),
+        message=msg,
     )
 
 

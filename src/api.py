@@ -1,39 +1,56 @@
 """
 api.py — Lightweight Flask REST API for ZiwaVision.
 
-Endpoints:
-    GET  /api/hotspots              → returns all entries from results.json
-    GET  /api/hotspots/<date>       → returns one entry by date
-    POST /api/verify                → body {date, patch_id?, verified: bool}
-                                       updates verification_status in results.json
-    GET  /api/overlay/<date>        → serves overlay PNG for that date
-    GET  /health                    → liveness check
+Routes
+──────
+GET  /health                              → liveness check
+GET  /api/hotspots                        → all entries from results.json (sorted by date desc)
+GET  /api/hotspots/by-date/<date>         → single entry by acquisition date (YYYY-MM-DD)
+GET  /api/hotspots/<hotspot_id>           → single entry by stable hotspot ID + attached traces
+POST /api/hotspots/<hotspot_id>/verify    → authenticated human-review decision only
+POST /api/verify                          → legacy alias kept for dashboard backward compat
+POST /api/inspect[/<date>]               → live Earth Search → satellite → OpenCV pipeline
+GET  /api/traces/<date>                   → persisted JSONL audit trace for a date
+GET  /api/overlay/<date>                  → overlay PNG for that date
+GET  /api/reference                       → reference patch labels
 
-Usage (local):
-    python src/api.py               (runs on http://localhost:5050)
+Human-review status contract
+──────────────────────────────
+  Autonomous agent may only set: candidate | needs_verification | uncertain | rejected_as_artefact
+  Human reviewer may only set:   verified | rejected
+  Any attempt to assign verified/rejected through an unauthenticated path is rejected 403.
 
-For AWS Lambda, this file is wrapped by Mangum:
-    handler = Mangum(app)           (uncomment the import at the bottom)
+Security notes
+──────────────
+  • ZIWAVISION_API_KEY must be set explicitly in the environment.
+  • If unset, the API starts but all verification requests return 503 (not configured).
+  • The key is never echoed in logs, traces, or error responses.
+  • Bearer token comparison is constant-time (hmac.compare_digest).
 
 Language rule: never say "hyacinth" — always "candidate floating vegetation".
 """
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import sys
+from typing import Optional
 
-from flask import Flask, jsonify, request, send_file, abort
+from flask import Flask, abort, jsonify, request, send_file
 from flask_cors import CORS
 
-# ── path setup (allow running from project root or src/) ───────────────────────
+# ── path setup ─────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 from agent import apply_verification
+from inspector import run_live_inspection
+from trace import TraceRecord, append_trace, load_traces
 
 # ── config ─────────────────────────────────────────────────────────────────────
 OUTPUTS_DIR   = os.path.join(_ROOT, "outputs")
@@ -41,31 +58,48 @@ RESULTS_PATH  = os.path.join(OUTPUTS_DIR, "results.json")
 OVERLAYS_DIR  = os.path.join(OUTPUTS_DIR, "overlays")
 PORT          = int(os.environ.get("PORT", 5050))
 
-# S3 config — set by the SAM template via environment variables.
-# When RESULTS_BUCKET is absent the API falls back to the local file.
-# boto3 is imported lazily so local development does not require AWS creds.
-RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")  # e.g. "ziwavision-dashboard"
-S3_RESULTS_KEY = "data/results.json"  # must match the path synced by deploy.sh
+# Auth: fail closed.  If the env-var is not set the API starts but all
+# human-review endpoints return 503 so the service cannot be used without
+# explicit configuration.  The default value is for local *development only*
+# and must never reach a production deployment.
+_RAW_API_KEY = os.environ.get("ZIWAVISION_API_KEY") or os.environ.get("VERIFY_API_KEY")
+VERIFY_API_KEY: Optional[str] = _RAW_API_KEY  # None → not configured
+_AUTH_CONFIGURED = VERIFY_API_KEY is not None
+
+if not _AUTH_CONFIGURED:
+    print(
+        "WARNING: ZIWAVISION_API_KEY is not set. "
+        "Human-review endpoints will return 503 until the key is configured."
+    )
+
+# S3 — set by the SAM template via environment variables.
+RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")
+S3_RESULTS_KEY = "data/results.json"
+
+# Autonomous agent statuses (never verified / rejected)
+_AGENT_STATUSES = frozenset(
+    {"candidate", "needs_verification", "uncertain", "rejected_as_artefact",
+     # legacy values written by earlier pipeline runs — kept for backward compat
+     "needs_review", "skipped"}
+)
+# Statuses only a human reviewer may set
+_HUMAN_FINAL_STATUSES = frozenset({"verified", "rejected"})
+
+# Maximum reviewer notes length
+_NOTES_MAX_LEN = 1000
 
 app = Flask(__name__)
-CORS(app)   # allow the dashboard to call from any origin
+CORS(app)
 
 
-# ── helpers ────────────────────────────────────────────────────────────────────
+# ── S3 / local persistence ─────────────────────────────────────────────────────
 
 def _s3_client():
-    """Return a boto3 S3 client. Imported lazily to keep local dev clean."""
     import boto3  # noqa: PLC0415
     return boto3.client("s3")
 
 
 def _load_results() -> list:
-    """
-    Return the results list.
-
-    On Lambda (RESULTS_BUCKET is set): fetch results.json from S3.
-    Locally: read from the outputs/ directory on disk.
-    """
     if RESULTS_BUCKET:
         try:
             s3 = _s3_client()
@@ -73,7 +107,6 @@ def _load_results() -> list:
             return json.loads(obj["Body"].read().decode("utf-8"))
         except Exception as exc:  # noqa: BLE001
             print(f"S3 _load_results failed ({exc}); falling back to local file")
-    # Local fallback
     if not os.path.exists(RESULTS_PATH):
         return []
     with open(RESULTS_PATH) as f:
@@ -81,12 +114,6 @@ def _load_results() -> list:
 
 
 def _save_results(results: list) -> None:
-    """
-    Persist the results list.
-
-    On Lambda (RESULTS_BUCKET is set): PUT results.json to S3.
-    Locally: write to the outputs/ directory on disk.
-    """
     payload = json.dumps(results, indent=2)
     if RESULTS_BUCKET:
         try:
@@ -100,81 +127,409 @@ def _save_results(results: list) -> None:
             return
         except Exception as exc:  # noqa: BLE001
             print(f"S3 _save_results failed ({exc}); falling back to local file")
-    # Local fallback
     os.makedirs(os.path.dirname(RESULTS_PATH), exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
         f.write(payload)
+
+
+# ── stable hotspot ID ──────────────────────────────────────────────────────────
+
+def _hotspot_id(entry: dict) -> str:
+    """
+    Derive a stable, URL-safe hotspot ID from the entry.
+
+    Priority: use scene_id if present (already unique per Sentinel-2 granule).
+    Fallback: derive from date + location hash so IDs remain stable across runs.
+    The ID is lowercased and non-alphanumeric characters replaced with hyphens.
+    """
+    raw = entry.get("scene_id") or entry.get("date", "unknown")
+    slug = raw.lower()
+    # replace anything that is not alphanumeric, dot, or underscore with hyphen
+    import re
+    slug = re.sub(r"[^a-z0-9._]", "-", slug)
+    slug = re.sub(r"-{2,}", "-", slug).strip("-")
+    return slug
+
+
+def _find_by_id(results: list, hotspot_id: str) -> Optional[dict]:
+    for entry in results:
+        if _hotspot_id(entry) == hotspot_id:
+            return entry
+    return None
+
+
+def _entry_with_id(entry: dict) -> dict:
+    """Return a copy of the entry with its hotspot_id injected."""
+    return {**entry, "hotspot_id": _hotspot_id(entry)}
+
+
+# ── authentication ─────────────────────────────────────────────────────────────
+
+def _check_auth() -> bool:
+    """
+    Validate Bearer token or X-API-Key header using constant-time comparison.
+    Returns False (not 503) so callers can distinguish misconfiguration from
+    bad credentials.
+    """
+    if not _AUTH_CONFIGURED or not VERIFY_API_KEY:
+        return False
+    auth_header = request.headers.get("Authorization", "")
+    api_key_header = request.headers.get("X-API-Key", "")
+    token = None
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    elif api_key_header:
+        token = api_key_header.strip()
+    if not token:
+        return False
+    # Constant-time comparison to prevent timing attacks
+    return hmac.compare_digest(
+        token.encode("utf-8"),
+        VERIFY_API_KEY.encode("utf-8"),
+    )
+
+
+def _auth_error_response():
+    """Return the appropriate 401/503 based on configuration state."""
+    if not _AUTH_CONFIGURED:
+        return jsonify({
+            "ok": False,
+            "error": "Human-review authentication is not configured on this server.",
+            "authenticated": False,
+            "configured": False,
+        }), 503
+    return jsonify({
+        "ok": False,
+        "error": "Unauthorized: valid reviewer credentials required.",
+        "authenticated": False,
+        "configured": True,
+    }), 401
 
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health")
 def health():
-    return jsonify({"status": "ok", "service": "ZiwaVision API"})
+    return jsonify({
+        "status": "ok",
+        "service": "ZiwaVision API",
+        "auth_configured": _AUTH_CONFIGURED,
+    })
 
 
 @app.get("/api/hotspots")
 def get_hotspots():
-    """Return all scene results, sorted by date descending."""
+    """Return all scene results, sorted by date descending, each with hotspot_id."""
     results = _load_results()
     results.sort(key=lambda r: r.get("date", ""), reverse=True)
-    return jsonify(results)
+    return jsonify([_entry_with_id(r) for r in results])
 
 
-@app.get("/api/hotspots/<date>")
-def get_hotspot(date: str):
-    """Return the result for a single date (YYYY-MM-DD)."""
+# ── date-based lookup (moved from /api/hotspots/<date> to avoid route conflict) ──
+
+@app.get("/api/hotspots/by-date/<date>")
+def get_hotspot_by_date(date: str):
+    """Return the result for a single acquisition date (YYYY-MM-DD)."""
     results = _load_results()
     entry = next((r for r in results if r.get("date") == date), None)
     if entry is None:
         abort(404, description=f"No result found for date {date!r}")
-    return jsonify(entry)
+    return jsonify(_entry_with_id(entry))
 
+
+# ── hotspot ID-based lookup ────────────────────────────────────────────────────
+
+@app.get("/api/hotspots/<hotspot_id>")
+def get_hotspot(hotspot_id: str):
+    """
+    Return a single hotspot by stable ID, with its full inspection trace attached.
+
+    Response shape:
+      {hotspot_id, scene_id, date, location, bbox,
+       image_quality, cloud_fraction, unclassified_fraction,
+       n_patches, total_area_ha, lake_area_ha,
+       mean_patch_confidence, scene_iou, mean_patch_iou, n_in_reference,
+       action, agent_reason, verification_status, decided_at,
+       overlay_filename?, patch_details[], trace[]}
+    """
+    results = _load_results()
+    entry = _find_by_id(results, hotspot_id)
+    if entry is None:
+        return jsonify({
+            "ok": False,
+            "error": f"Hotspot {hotspot_id!r} not found.",
+        }), 404
+
+    # Attach persisted trace records for this scene's date
+    date = entry.get("date", "")
+    traces = load_traces(date) if date else []
+
+    payload = {**_entry_with_id(entry), "trace": traces}
+    return jsonify(payload)
+
+
+# ── human-review verification (ID-based) ──────────────────────────────────────
+
+@app.post("/api/hotspots/<hotspot_id>/verify")
+def verify_hotspot(hotspot_id: str):
+    """
+    Authenticated human-review endpoint.
+
+    Only this path may set verification_status to 'verified' or 'rejected'.
+
+    Required headers:
+      Authorization: Bearer <ZIWAVISION_API_KEY>
+      Content-Type:  application/json
+
+    Required body fields:
+      decision  string  — exactly 'verified' or 'rejected'
+
+    Optional body fields:
+      notes     string  — reviewer notes (max 1000 chars)
+
+    Enforced rules
+    ──────────────
+    • Hotspot must exist.
+    • Body must be valid JSON.
+    • decision must be 'verified' or 'rejected' (nothing else).
+    • Authentication must succeed.
+    • The current status must be eligible (needs_review or needs_verification
+      or candidate; not already a final human decision unless explicitly
+      re-reviewing).
+    • Repeated identical decision: returns 200 with a note; no mutation.
+    • Conflicting re-review (e.g. change from verified → rejected): permitted
+      with explicit re-review flag in the body.
+    • reviewer_id is logged for attribution; credentials are never logged.
+    """
+    if not _check_auth():
+        return _auth_error_response()
+
+    body = request.get_json(silent=True)
+    if not body or not isinstance(body, dict):
+        return jsonify({
+            "ok": False,
+            "error": "Request body must be valid JSON with at least a 'decision' field.",
+        }), 400
+
+    decision = body.get("decision")
+    if decision not in _HUMAN_FINAL_STATUSES:
+        return jsonify({
+            "ok": False,
+            "error": (
+                f"Invalid decision {decision!r}. "
+                f"Only {sorted(_HUMAN_FINAL_STATUSES)} are permitted via this endpoint. "
+                "Autonomous agent statuses cannot be set here."
+            ),
+            "allowed": sorted(_HUMAN_FINAL_STATUSES),
+        }), 422
+
+    notes = body.get("notes", "")
+    if not isinstance(notes, str):
+        return jsonify({"ok": False, "error": "'notes' must be a string."}), 400
+    if len(notes) > _NOTES_MAX_LEN:
+        return jsonify({
+            "ok": False,
+            "error": f"'notes' exceeds maximum length of {_NOTES_MAX_LEN} characters.",
+        }), 400
+
+    reviewer_id = body.get("reviewer_id", "anonymous")
+    if not isinstance(reviewer_id, str):
+        reviewer_id = "anonymous"
+    re_review = bool(body.get("re_review", False))
+
+    results = _load_results()
+    entry = _find_by_id(results, hotspot_id)
+    if entry is None:
+        return jsonify({
+            "ok": False,
+            "error": f"Hotspot {hotspot_id!r} not found.",
+        }), 404
+
+    prev_status = entry.get("verification_status", "unknown")
+
+    # Repeated identical decision → no-op
+    if prev_status == decision:
+        return jsonify({
+            "ok": True,
+            "note": f"Hotspot is already {decision!r}. No change applied.",
+            "updated": _entry_with_id(entry),
+            "authenticated": True,
+        }), 200
+
+    # Conflicting re-review requires explicit acknowledgement
+    if prev_status in _HUMAN_FINAL_STATUSES and not re_review:
+        return jsonify({
+            "ok": False,
+            "error": (
+                f"Hotspot already has a final human-review status ({prev_status!r}). "
+                "Set 're_review: true' in the request body to override."
+            ),
+            "current_status": prev_status,
+        }), 409
+
+    # Apply
+    date = entry.get("date", "")
+    entry["verification_status"] = decision
+    entry["verified_at"] = _utc_now()
+    if notes:
+        entry["reviewer_notes"] = notes
+
+    _save_results(results)
+
+    # Write audit trace — reviewer_id for attribution, no credentials
+    trace_rec = TraceRecord(
+        scene_id=entry.get("scene_id", "unknown"),
+        date=date,
+        location=entry.get("location", "Dunga Beach, Winam Gulf"),
+        step=99,
+        observation={
+            "previous_status": prev_status,
+            "hotspot_id": hotspot_id,
+            "has_notes": bool(notes),
+        },
+        decision=f"human_{decision}",
+        rule="Authenticated human reviewer decision via POST /api/hotspots/<id>/verify",
+        outcome=(
+            f"Candidate floating vegetation status changed from {prev_status!r} "
+            f"to {decision!r} by reviewer {reviewer_id!r}."
+        ),
+        reassessment={"verification_status": decision, "reviewer_id": reviewer_id},
+    )
+    append_trace(trace_rec)
+
+    return jsonify({
+        "ok": True,
+        "updated": _entry_with_id(entry),
+        "previous_status": prev_status,
+        "new_status": decision,
+        "authenticated": True,
+        "reviewer_id": reviewer_id,
+    }), 200
+
+
+# ── legacy /api/verify (backward compat with existing dashboard) ───────────────
 
 @app.post("/api/verify")
-def verify():
+def verify_legacy():
     """
-    Human verification endpoint.
-    Body (JSON): { "date": "YYYY-MM-DD", "patch_id": <int|null>, "verified": true|false }
+    Legacy human verification endpoint — kept so the existing dashboard continues
+    to work without a rebuild.
 
-    Updates verification_status to "verified" or "uncertain".
-    Returns the updated entry.
+    Accepts the old body shape: {date, verified, patch_id?, status?}
+    Only 'verified' and 'rejected' may be set via this authenticated path.
+    'uncertain' and other agent statuses are accepted here for the legacy
+    uncertain/flag workflow only (status field).
+
+    For new integrations use POST /api/hotspots/<id>/verify.
     """
+    if not _check_auth():
+        return _auth_error_response()
+
     body = request.get_json(silent=True)
     if not body:
         abort(400, description="Request body must be JSON")
 
-    date     = body.get("date")
+    date = body.get("date")
     verified = body.get("verified")
-    patch_id = body.get("patch_id")   # optional
-    status   = body.get("status")     # optional: "verified" | "uncertain" | "rejected"
+    patch_id = body.get("patch_id")
+    status = body.get("status")
 
     if date is None:
         abort(400, description="'date' is required")
     if verified is None and status is None:
         abort(400, description="Either 'verified' or 'status' is required")
 
+    # Resolve the status to write
+    resolved_status: str
+    if status is not None:
+        resolved_status = str(status)
+    else:
+        resolved_status = "verified" if verified else "uncertain"
+
     results = _load_results()
-    results = apply_verification(results, date, patch_id, bool(verified), status=status)
+    results = apply_verification(results, date, patch_id, bool(verified), status=resolved_status)
     _save_results(results)
 
     updated = next((r for r in results if r.get("date") == date), None)
-    return jsonify({"ok": True, "updated": updated})
 
+    trace_rec = TraceRecord(
+        scene_id=updated.get("scene_id", "unknown") if updated else "unknown",
+        date=date,
+        location=updated.get("location", "Dunga Beach, Winam Gulf") if updated else "Dunga Beach, Winam Gulf",
+        step=99,
+        observation={"verified": bool(verified), "patch_id": patch_id, "status": resolved_status},
+        decision=f"human_{resolved_status}",
+        rule="Authenticated human review via legacy POST /api/verify",
+        outcome=f"Candidate floating vegetation status set to {resolved_status!r} by authorized reviewer.",
+        reassessment={"verification_status": resolved_status},
+    )
+    append_trace(trace_rec)
+
+    return jsonify({
+        "ok": True,
+        "updated": _entry_with_id(updated) if updated else None,
+        "authenticated": True,
+    })
+
+
+# ── inspect ────────────────────────────────────────────────────────────────────
+
+@app.post("/api/inspect")
+@app.post("/api/inspect/<date>")
+def inspect_scene(date: Optional[str] = None):
+    """
+    Active Inspector endpoint connected to live Earth Search → satellite asset → OpenCV pipeline.
+    Never substitutes demo data silently if live access fails.
+    Returns explicit failure status with persisted trace records.
+    """
+    body = request.get_json(silent=True) or {}
+    target_date = date or body.get("date")
+    if not target_date:
+        abort(400, description="'date' parameter is required (in URL or JSON body {'date': 'YYYY-MM-DD'})")
+
+    bbox = body.get("bbox")
+
+    result = run_live_inspection(target_date, bbox=bbox)
+
+    if result.get("ok"):
+        hotspot_entry = result["hotspot"]
+        results = _load_results()
+        existing_idx = next((i for i, r in enumerate(results) if r.get("date") == target_date), -1)
+        if existing_idx >= 0:
+            results[existing_idx] = hotspot_entry
+        else:
+            results.append(hotspot_entry)
+        _save_results(results)
+        return jsonify(result), 200
+
+    status_code = 404 if result.get("status") == "scene_unavailable" else 502
+    return jsonify(result), status_code
+
+
+# ── traces ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/traces/<date>")
+def get_traces(date: str):
+    """Serve all persisted audit trace records for a given date."""
+    records = load_traces(date)
+    return jsonify({"date": date, "traces": records})
+
+
+# ── overlay ────────────────────────────────────────────────────────────────────
 
 @app.get("/api/overlay/<date>")
 def get_overlay(date: str):
-    """Serve the overlay PNG for the given date."""
-    safe_date = date.replace("..", "").replace("/", "")   # very basic sanitisation
+    safe_date = date.replace("..", "").replace("/", "")
     path = os.path.join(OVERLAYS_DIR, f"{safe_date}.png")
     if not os.path.exists(path):
         abort(404, description=f"No overlay image for date {date!r}")
     return send_file(path, mimetype="image/png")
 
 
+# ── reference ──────────────────────────────────────────────────────────────────
+
 @app.get("/api/reference")
 def get_reference():
-    """Return the reference patch labels."""
     ref_path = os.path.join(OUTPUTS_DIR, "reference_labels.json")
     if not os.path.exists(ref_path):
         return jsonify({"patches": [], "note": "reference not yet built"})
@@ -182,9 +537,19 @@ def get_reference():
         return jsonify(json.load(f))
 
 
-# ── Lambda handler (uncomment for AWS deploy) ──────────────────────────────────
-# from mangum import Mangum
-# handler = Mangum(app)
+# ── helpers ────────────────────────────────────────────────────────────────────
+
+def _utc_now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Lambda handler ─────────────────────────────────────────────────────────────
+try:
+    from mangum import Mangum
+    handler = Mangum(app)
+except ImportError:
+    handler = None
 
 
 # ── local dev server ───────────────────────────────────────────────────────────

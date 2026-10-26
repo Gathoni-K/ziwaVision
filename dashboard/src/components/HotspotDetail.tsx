@@ -1,5 +1,5 @@
 import React from 'react';
-import { Hotspot, VerificationStatus } from '../types/hotspot';
+import { Hotspot, TraceEntry, VerificationStatus } from '../types/hotspot';
 import { StatusBadge } from './StatusBadge';
 import { OverlayViewer } from './OverlayViewer';
 import { PatchCardList } from './PatchCardList';
@@ -12,6 +12,10 @@ interface HotspotDetailProps {
   onVerify: (status: VerificationStatus) => void;
   isVerifying: boolean;
   isSampleData?: boolean;
+  onInspect?: (date: string) => void;
+  isInspecting?: boolean;
+  inspectError?: string | null;
+  traces?: TraceEntry[];
 }
 
 function getScoreColor(val?: number): string {
@@ -27,6 +31,10 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
   onVerify,
   isVerifying,
   isSampleData = false,
+  onInspect,
+  isInspecting = false,
+  inspectError = null,
+  traces = [],
 }) => {
   if (!hotspot) {
     return (
@@ -123,6 +131,82 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
       {/* Candidate Floating Vegetation List */}
       <PatchCardList patches={hotspot.patch_details || []} />
 
+      {/* Active Inspector Trigger Bar */}
+      <div
+        style={{
+          margin: '16px 0 12px 0',
+          padding: '12px 14px',
+          background: 'rgba(255, 255, 255, 0.02)',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          borderRadius: 'var(--radius)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: '0.85rem', color: 'var(--text)' }}>
+              ⚡ Active Inspector Live Pipeline
+            </div>
+            <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>
+              Earth Search STAC → Sentinel-2 COG → OpenCV 5 → Decision Gates
+            </div>
+          </div>
+          {onInspect && (
+            <button
+              type="button"
+              disabled={isInspecting}
+              onClick={() => onInspect(hotspot.date)}
+              style={{
+                background: isInspecting ? 'rgba(255,255,255,0.08)' : 'linear-gradient(135deg, #00e5a0, #00b37e)',
+                color: isInspecting ? 'var(--muted)' : '#041f17',
+                border: 'none',
+                fontWeight: 700,
+                fontSize: '0.78rem',
+                padding: '6px 14px',
+                borderRadius: 'var(--radius-sm)',
+                cursor: isInspecting ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                transition: 'all 0.2s ease',
+              }}
+            >
+              {isInspecting ? (
+                <>
+                  <span className="spinner" style={{ display: 'inline-block', width: '12px', height: '12px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+                  <span>Inspecting Live Scene…</span>
+                </>
+              ) : (
+                <span>🔬 Run Active Inspector</span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {inspectError && (
+          <div
+            style={{
+              background: 'rgba(239, 68, 68, 0.12)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '8px 12px',
+              fontSize: '0.74rem',
+              color: '#f87171',
+              display: 'flex',
+              gap: '6px',
+              alignItems: 'flex-start',
+            }}
+          >
+            <span>⚠️</span>
+            <div>
+              <strong>Live Inspection Failed:</strong> {inspectError}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Agent Decision Trace */}
       <TraceTimeline
         action={hotspot.action}
@@ -131,6 +215,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
         imageQuality={hotspot.image_quality}
         confidence={hotspot.mean_patch_confidence}
         sceneIou={hotspot.scene_iou}
+        traces={traces}
       />
 
       {/* Action Controls */}

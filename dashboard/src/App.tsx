@@ -7,7 +7,8 @@ import { AreaOverTimeChart } from './components/AreaOverTimeChart';
 import { HotspotList } from './components/HotspotList';
 import { HotspotDetail } from './components/HotspotDetail';
 import { Toast, ToastMessage } from './components/Toast';
-import { VerificationStatus } from './types/hotspot';
+import { TraceEntry, VerificationStatus } from './types/hotspot';
+import { inspectScene, fetchTraces } from './api/client';
 
 export const App: React.FC = () => {
   const {
@@ -24,6 +25,9 @@ export const App: React.FC = () => {
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [isInspecting, setIsInspecting] = useState(false);
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [traces, setTraces] = useState<TraceEntry[]>([]);
 
   const addToast = useCallback(
     (type: 'success' | 'error' | 'info', message: string) => {
@@ -50,8 +54,43 @@ export const App: React.FC = () => {
     }
   }, [hotspots, selectedDate]);
 
+  // Load audit traces when selectedDate changes
+  useEffect(() => {
+    if (selectedDate) {
+      setInspectError(null);
+      fetchTraces(selectedDate).then((tr) => setTraces(tr));
+    } else {
+      setTraces([]);
+      setInspectError(null);
+    }
+  }, [selectedDate]);
+
   const selectedHotspot =
     hotspots.find((h) => h.date === selectedDate) || null;
+
+  const handleInspect = async (date: string) => {
+    setIsInspecting(true);
+    setInspectError(null);
+    try {
+      addToast('info', `Running Active Inspector for ${date} via Earth Search → OpenCV...`);
+      const res = await inspectScene(date);
+      if (res.ok && res.hotspot) {
+        updateLocalHotspot(res.hotspot);
+        if (res.traces) {
+          setTraces(res.traces);
+        }
+        addToast('success', `Active Inspector completed for ${date}: ${res.decision || res.status}`);
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Inspection failed';
+      setInspectError(msg);
+      addToast('error', `Active Inspector failed: ${msg}`);
+      // Refresh traces to show persisted failure trace if any
+      fetchTraces(date).then((tr) => setTraces(tr));
+    } finally {
+      setIsInspecting(false);
+    }
+  };
 
   const handleVerify = async (newStatus: VerificationStatus) => {
     if (!selectedHotspot) return;
@@ -59,6 +98,8 @@ export const App: React.FC = () => {
     try {
       const updated = await verify(selectedHotspot, newStatus, isFallback);
       updateLocalHotspot(updated);
+      // Refresh traces to reflect human verification audit step
+      fetchTraces(selectedHotspot.date).then((tr) => setTraces(tr));
 
       const statusLabels: Record<VerificationStatus, string> = {
         verified: 'marked as verified ✓',
@@ -105,6 +146,7 @@ export const App: React.FC = () => {
                 <span>{error}</span>
               </div>
               <button
+                type="button"
                 onClick={() => refetch()}
                 style={{
                   background: 'rgba(255,255,255,0.08)',
@@ -179,6 +221,10 @@ export const App: React.FC = () => {
           onVerify={handleVerify}
           isVerifying={isVerifying}
           isSampleData={isFallback}
+          onInspect={handleInspect}
+          isInspecting={isInspecting}
+          inspectError={inspectError}
+          traces={traces}
         />
       </main>
 

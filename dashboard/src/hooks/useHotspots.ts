@@ -34,13 +34,13 @@ export function useHotspots(): UseHotspotsResult {
         setIsFallback(false);
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : 'Unknown network error';
-        setError(msg);
-        // Fallback to fixture data for seamless developer experience
-        setHotspots(FIXTURE_HOTSPOTS);
-        setIsFallback(true);
+        setError(`Failed to fetch live hotspot data: ${msg}`);
+        setHotspots([]);
+        setIsFallback(false);
       }
     } else {
-      setError('Could not connect to ZiwaVision API (offline). Displaying reference fixture dataset.');
+      setError('Could not connect to ZiwaVision API backend (offline or disconnected). Live inspection unavailable.');
+      // Keep reference fixtures only as an explicit offline fallback
       setHotspots(FIXTURE_HOTSPOTS);
       setIsFallback(true);
     }

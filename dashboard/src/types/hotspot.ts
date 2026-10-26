@@ -57,14 +57,22 @@ export interface Hotspot {
 }
 
 export interface TraceEntry {
-  scene_id: string;
-  date: string;
-  action: AgentAction;
-  reason: string;
-  decided_at: string;
-  image_quality: number;
-  detection_confidence: number;
-  reference_iou: number;
+  scene_id?: string;
+  date?: string;
+  location?: string;
+  step?: number;
+  decision?: string;
+  action?: AgentAction | string;
+  rule?: string;
+  outcome?: string;
+  reason?: string;
+  observation?: Record<string, any>;
+  reassessment?: Record<string, any>;
+  decided_at?: string;
+  written_at?: string;
+  image_quality?: number;
+  detection_confidence?: number;
+  reference_iou?: number;
 }
 
 export interface VerifyPayload {
@@ -77,4 +85,14 @@ export interface VerifyPayload {
 export interface VerifyResponse {
   ok: boolean;
   updated: Hotspot;
+  authenticated?: boolean;
+}
+
+export interface InspectResponse {
+  ok: boolean;
+  hotspot?: Hotspot;
+  traces?: TraceEntry[];
+  error?: string;
+  status?: string;
+  decision?: string;
 }

@@ -287,10 +287,17 @@ def detect_patches(
         cx_col   = int(centroids[label_id, 0])   # OpenCV centroid: (x=col, y=row)
         cx_row   = int(centroids[label_id, 1])
 
-        # Centroid assertion: centroid must be in allowed domain
-        assert allowed_domain[cx_row, cx_col], (
-            f"Assertion failed: patch {label_id} centroid ({cx_row}, {cx_col}) on {date} is inland!"
-        )
+        # A rounded component centroid can fall just outside a thin allowed
+        # domain even when every component pixel is valid. Snap it to the
+        # nearest valid component pixel before reporting coordinates.
+        if not allowed_domain[cx_row, cx_col]:
+            component_rows, component_cols = np.where(patch_mask)
+            nearest = np.argmin(
+                (component_rows - centroids[label_id, 1]) ** 2
+                + (component_cols - centroids[label_id, 0]) ** 2
+            )
+            cx_row = int(component_rows[nearest])
+            cx_col = int(component_cols[nearest])
 
         # bounding box
         bx  = int(stats[label_id, cv2.CC_STAT_LEFT])

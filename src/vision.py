@@ -43,6 +43,9 @@ class Patch:
     ndvi_fraction: float     # fraction of patch pixels with NDVI > threshold
     scl_veg_fraction: float  # fraction labelled SCL class 4 (vegetation)
     confidence: float        # 0–1 detection confidence
+    dist_to_shore_m: float = 0.0
+    in_open_water: bool = True
+    in_shore_band: bool = False
     notes: str = ""
 
 
@@ -213,18 +216,17 @@ def detect_patches(
     blue: np.ndarray,
     scl: np.ndarray,
     lake_filled: np.ndarray,
+    shore_band: Optional[np.ndarray] = None,
     use_grabcut: bool = True,
 ) -> SceneVision:
     """
     Full detection pipeline for one scene.
 
-    Steps:
-    1. Compute NDVI.
-    2. Build image quality score.
-    3. Build NDVI-based candidate seed mask (inside lake, away from shore).
-    4. Optionally refine with GrabCut (OpenCV 5).
-    5. Label connected components; compute per-patch stats.
-    6. Build overlay image (RGB + yellow candidate overlay).
+    Patches can ONLY come from:
+      - the open-water mask (lake_filled eroded by 7 px) OR
+      - the shore band (ring inside 3 px, outside 5 px)
+    Never inland. An assertion validates that every patch and centroid is strictly
+    within this allowed domain.
 
     Returns a SceneVision object. If quality < 0.5 or no lake, patches will be empty.
     """
@@ -234,14 +236,28 @@ def detect_patches(
     quality, cloud_frac, unc_frac = image_quality_score(scl)
     lake_area_ha = float(lake_filled.sum()) * PIXEL_HA
 
-    # ── Step 3: candidate seed mask ───────────────────────────────────────────
-    seed = candidates_mask(lake_filled, ndvi, scl, erode_shore_px=7)
+    # ── Step 3: Define Allowed Detection Domain (Open-water OR Shore Band) ───
+    # Open-water mask: lake_filled eroded by 7 px
+    k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * 7 + 1, 2 * 7 + 1))
+    open_water_mask = (cv2.erode(lake_filled.astype(np.uint8), k_open) == 1)
+
+    # Shore band
+    if shore_band is None:
+        from pipeline import ring
+        shore_band = ring(lake_filled, inside_px=3, outside_px=5)
+
+    allowed_domain = open_water_mask | (shore_band == 1)
+
+    # Candidate vegetation signal within the allowed domain (never inland)
+    veg_signal = (ndvi > NDVI_THRESHOLD) | (scl == 4)
+    seed = allowed_domain & veg_signal
 
     # ── Step 4: GrabCut refinement ────────────────────────────────────────────
     if use_grabcut and seed.sum() >= MIN_PATCH_PX:
-        # Build uint8 RGB for GrabCut (scale to 0-255)
         rgb_u8 = np.clip(np.dstack([red, green, blue]) / 3000 * 255, 0, 255).astype(np.uint8)
         refined = _grabcut_refine(rgb_u8, seed, lake_filled)
+        # Intersect with allowed domain so GrabCut never expands onto land
+        refined = refined & allowed_domain
     else:
         refined = seed.copy()
 
@@ -251,15 +267,30 @@ def detect_patches(
         refined_u8, connectivity=8
     )
 
+    # Distance transform from shoreline (inside lake)
+    dist_to_shore_px = cv2.distanceTransform(lake_filled.astype(np.uint8), cv2.DIST_L2, 5)
+
     patches: List[Patch] = []
     for label_id in range(1, n_labels):   # skip background (0)
         area_px  = int(stats[label_id, cv2.CC_STAT_AREA])
         if area_px < MIN_PATCH_PX:
             continue
 
+        patch_mask = (labels == label_id)
+
+        # ── Invariant Assertion: Patches can ONLY come from open-water or shore band, never inland ──
+        assert np.all(allowed_domain[patch_mask]), (
+            f"Assertion failed: patch {label_id} on {date} contains pixels outside open-water and shore band!"
+        )
+
         area_ha  = area_px * PIXEL_HA
         cx_col   = int(centroids[label_id, 0])   # OpenCV centroid: (x=col, y=row)
         cx_row   = int(centroids[label_id, 1])
+
+        # Centroid assertion: centroid must be in allowed domain
+        assert allowed_domain[cx_row, cx_col], (
+            f"Assertion failed: patch {label_id} centroid ({cx_row}, {cx_col}) on {date} is inland!"
+        )
 
         # bounding box
         bx  = int(stats[label_id, cv2.CC_STAT_LEFT])
@@ -268,9 +299,6 @@ def detect_patches(
         bh_ = int(stats[label_id, cv2.CC_STAT_HEIGHT])
         bbox = (by, bx, by + bh_, bx + bw)
 
-        # patch pixels mask
-        patch_mask = (labels == label_id)
-
         # per-patch spectral stats
         patch_ndvi   = ndvi[patch_mask]
         mean_ndvi    = float(patch_ndvi.mean())
@@ -278,8 +306,11 @@ def detect_patches(
         scl_veg_frac = float((scl[patch_mask] == 4).mean())
 
         confidence = _patch_confidence(area_ha, mean_ndvi, ndvi_frac, scl_veg_frac)
-
         latlon = _px_to_latlon(cx_row, cx_col, rows, cols)
+
+        is_open = bool(open_water_mask[cx_row, cx_col])
+        is_band = bool(shore_band[cx_row, cx_col])
+        dist_m = float(dist_to_shore_px[cx_row, cx_col]) * 10.0
 
         patch = Patch(
             patch_id=label_id,
@@ -291,6 +322,9 @@ def detect_patches(
             ndvi_fraction=round(ndvi_frac, 4),
             scl_veg_fraction=round(scl_veg_frac, 4),
             confidence=confidence,
+            dist_to_shore_m=round(dist_m, 1),
+            in_open_water=is_open,
+            in_shore_band=is_band,
         )
         patches.append(patch)
 
@@ -301,6 +335,22 @@ def detect_patches(
         overlay[refined] = overlay[refined] * 0.4 + np.array([0.6, 0.6, 0.0])  # yellow tint
 
     candidate_area_ha = sum(p.area_ha for p in patches)
+
+    # ── Sanity guard: warn if candidates are anomalously large ───────────────
+    # If candidate patches cover >20 % of the lake the detection is likely
+    # a false positive caused by a failed lake mask or a very turbid scene.
+    # We tag the patches with a note but keep them so the agent / human can
+    # still review. We do NOT discard them — that is the agent's job.
+    _AREA_FRACTION_WARN = 0.20
+    if lake_area_ha > 0 and candidate_area_ha > _AREA_FRACTION_WARN * lake_area_ha:
+        warning_note = (
+            f"[area-anomaly] candidate_area_ha {candidate_area_ha:.1f} "
+            f"is {candidate_area_ha / lake_area_ha:.0%} of lake_area_ha "
+            f"{lake_area_ha:.0f} — possible false positive (bad lake mask or turbid scene)"
+        )
+        print(f"  ⚠  {warning_note}")
+        for p in patches:
+            p.notes = (p.notes + " " + warning_note).strip()
 
     return SceneVision(
         scene_id=scene_id,

@@ -41,13 +41,39 @@ RESULTS_PATH  = os.path.join(OUTPUTS_DIR, "results.json")
 OVERLAYS_DIR  = os.path.join(OUTPUTS_DIR, "overlays")
 PORT          = int(os.environ.get("PORT", 5050))
 
+# S3 config — set by the SAM template via environment variables.
+# When RESULTS_BUCKET is absent the API falls back to the local file.
+# boto3 is imported lazily so local development does not require AWS creds.
+RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")  # e.g. "ziwavision-dashboard"
+S3_RESULTS_KEY = "data/results.json"  # must match the path synced by deploy.sh
+
 app = Flask(__name__)
 CORS(app)   # allow the dashboard to call from any origin
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
 
+def _s3_client():
+    """Return a boto3 S3 client. Imported lazily to keep local dev clean."""
+    import boto3  # noqa: PLC0415
+    return boto3.client("s3")
+
+
 def _load_results() -> list:
+    """
+    Return the results list.
+
+    On Lambda (RESULTS_BUCKET is set): fetch results.json from S3.
+    Locally: read from the outputs/ directory on disk.
+    """
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            obj = s3.get_object(Bucket=RESULTS_BUCKET, Key=S3_RESULTS_KEY)
+            return json.loads(obj["Body"].read().decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"S3 _load_results failed ({exc}); falling back to local file")
+    # Local fallback
     if not os.path.exists(RESULTS_PATH):
         return []
     with open(RESULTS_PATH) as f:
@@ -55,8 +81,29 @@ def _load_results() -> list:
 
 
 def _save_results(results: list) -> None:
+    """
+    Persist the results list.
+
+    On Lambda (RESULTS_BUCKET is set): PUT results.json to S3.
+    Locally: write to the outputs/ directory on disk.
+    """
+    payload = json.dumps(results, indent=2)
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            s3.put_object(
+                Bucket=RESULTS_BUCKET,
+                Key=S3_RESULTS_KEY,
+                Body=payload.encode("utf-8"),
+                ContentType="application/json",
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            print(f"S3 _save_results failed ({exc}); falling back to local file")
+    # Local fallback
+    os.makedirs(os.path.dirname(RESULTS_PATH), exist_ok=True)
     with open(RESULTS_PATH, "w") as f:
-        json.dump(results, f, indent=2)
+        f.write(payload)
 
 
 # ── routes ─────────────────────────────────────────────────────────────────────

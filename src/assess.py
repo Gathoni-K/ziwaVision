@@ -120,6 +120,9 @@ def assess(
             "ndvi_fraction":   p.ndvi_fraction,
             "scl_veg_fraction": p.scl_veg_fraction,
             "confidence":      p.confidence,
+            "dist_to_shore_m": getattr(p, "dist_to_shore_m", 0.0),
+            "in_open_water":   getattr(p, "in_open_water", True),
+            "in_shore_band":   getattr(p, "in_shore_band", False),
         }
         # Attach per-patch IoU if available
         if patch_matches:

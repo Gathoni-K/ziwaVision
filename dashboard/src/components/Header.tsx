@@ -18,6 +18,24 @@ export const Header: React.FC<HeaderProps> = ({ apiConnected, isSimulated = fals
         <p>Visual Hotspot Verification · Lake Victoria</p>
       </div>
       <div className="header-spacer" />
+      {isSimulated && (
+        <span
+          className="sample-data-badge"
+          style={{
+            background: '#f59e0b',
+            color: '#000000',
+            fontWeight: 800,
+            fontSize: '0.72rem',
+            padding: '4px 10px',
+            borderRadius: '4px',
+            letterSpacing: '0.08em',
+            marginRight: '12px',
+            boxShadow: '0 0 10px rgba(245, 158, 11, 0.4)',
+          }}
+        >
+          SAMPLE DATA
+        </span>
+      )}
       <div className="header-pill" aria-live="polite">
         <span
           className={`dot ${apiConnected ? 'connected' : 'offline'}`}

@@ -121,12 +121,47 @@ export const App: React.FC = () => {
             </div>
           )}
 
-          <StatsRow hotspots={hotspots} />
+          <StatsRow hotspots={hotspots} isSampleData={isFallback} />
+
+          {isFallback && (
+            <div
+              style={{
+                background: 'rgba(245, 158, 11, 0.12)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                borderRadius: 'var(--radius)',
+                padding: '10px 16px',
+                marginBottom: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                color: '#fbbf24',
+                fontSize: '0.8rem',
+              }}
+            >
+              <span
+                style={{
+                  background: '#f59e0b',
+                  color: '#000',
+                  fontWeight: 800,
+                  fontSize: '0.65rem',
+                  padding: '2px 6px',
+                  borderRadius: '3px',
+                  letterSpacing: '0.05em',
+                }}
+              >
+                SAMPLE DATA
+              </span>
+              <span>
+                Displaying fixture/mock observations dataset. Backend API is offline or disconnected.
+              </span>
+            </div>
+          )}
 
           <AreaOverTimeChart
             hotspots={hotspots}
             selectedDate={selectedDate}
             onSelectDate={(d) => setSelectedDate(d)}
+            isSampleData={isFallback}
           />
 
           <HotspotList
@@ -134,6 +169,7 @@ export const App: React.FC = () => {
             selectedDate={selectedDate}
             onSelect={(date) => setSelectedDate(date)}
             isLoading={isLoading}
+            isSampleData={isFallback}
           />
         </section>
 
@@ -142,6 +178,7 @@ export const App: React.FC = () => {
           onClose={() => setSelectedDate(null)}
           onVerify={handleVerify}
           isVerifying={isVerifying}
+          isSampleData={isFallback}
         />
       </main>
 

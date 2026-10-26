@@ -93,15 +93,26 @@ DASHBOARD_URL=$(aws cloudformation describe-stacks \
 echo "   API URL:       $API_URL"
 echo "   Dashboard URL: $DASHBOARD_URL"
 
-# ── 4. Patch dashboard/app.js with the real API URL ──────────────────────────
+# ── 4. Build the Vite dashboard ──────────────────────────────────────────────────────
 echo ""
-echo "[5] Patching dashboard with API URL…"
-sed -i "s|http://localhost:5050|$API_URL|g" "$ROOT/dashboard/app.js"
+echo "[5] Building Vite dashboard…"
+# The API URL is injected into dashboard/.env.production before building
+# so the compiled JS bundle talks to the real API Gateway, not localhost.
+ENV_PROD="$ROOT/dashboard/.env.production"
+if [ -n "$API_URL" ]; then
+  echo "VITE_API_BASE_URL=$API_URL" > "$ENV_PROD"
+  echo "   Wrote $ENV_PROD → VITE_API_BASE_URL=$API_URL"
+fi
+cd "$ROOT/dashboard"
+npm install --silent
+npm run build --silent
+cd "$ROOT"
 
-# ── 5. Sync dashboard static files ───────────────────────────────────────────
+# ── 5. Sync dashboard/dist to S3 ───────────────────────────────────────────
 echo ""
-echo "[6] Syncing dashboard to S3…"
-aws s3 sync "$ROOT/dashboard/" "s3://$BUCKET/" \
+echo "[6] Syncing dashboard/dist to S3…"
+# Sync the Vite build output (dashboard/dist/) — not the source tree.
+aws s3 sync "$ROOT/dashboard/dist/" "s3://$BUCKET/" \
   --acl public-read \
   --cache-control "max-age=300"
 

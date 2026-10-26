@@ -3,9 +3,10 @@ import { Hotspot } from '../types/hotspot';
 
 interface StatsRowProps {
   hotspots: Hotspot[];
+  isSampleData?: boolean;
 }
 
-export const StatsRow: React.FC<StatsRowProps> = ({ hotspots }) => {
+export const StatsRow: React.FC<StatsRowProps> = ({ hotspots, isSampleData = false }) => {
   const totalScenes = hotspots.length;
   const totalPatches = hotspots.reduce((sum, h) => sum + (h.n_patches || 0), 0);
   const totalArea = hotspots.reduce((sum, h) => sum + (h.total_area_ha || 0), 0);
@@ -13,7 +14,21 @@ export const StatsRow: React.FC<StatsRowProps> = ({ hotspots }) => {
 
   return (
     <div className="stats-row" role="region" aria-label="Summary statistics">
-      <div className="stat-card">
+      <div className="stat-card" style={{ position: 'relative' }}>
+        {isSampleData && (
+          <span style={{
+            position: 'absolute',
+            top: '8px',
+            right: '8px',
+            background: '#f59e0b',
+            color: '#000',
+            fontWeight: 800,
+            fontSize: '0.62rem',
+            padding: '2px 6px',
+            borderRadius: '3px',
+            letterSpacing: '0.05em'
+          }}>SAMPLE DATA</span>
+        )}
         <div className="label">Scenes Processed</div>
         <div className="value">{totalScenes}</div>
         <div className="sub">clear observations</div>

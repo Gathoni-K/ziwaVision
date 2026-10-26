@@ -7,6 +7,7 @@ interface HotspotListProps {
   selectedDate: string | null;
   onSelect: (date: string) => void;
   isLoading?: boolean;
+  isSampleData?: boolean;
 }
 
 type SortKey =
@@ -24,6 +25,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
   selectedDate,
   onSelect,
   isLoading = false,
+  isSampleData = false,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('date');
@@ -72,7 +74,24 @@ export const HotspotList: React.FC<HotspotListProps> = ({
   return (
     <div className="table-panel">
       <div className="panel-header">
-        <h2>Observation Log</h2>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h2>Observation Log</h2>
+          {isSampleData && (
+            <span
+              style={{
+                background: '#f59e0b',
+                color: '#000',
+                fontWeight: 800,
+                fontSize: '0.65rem',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                letterSpacing: '0.05em',
+              }}
+            >
+              SAMPLE DATA
+            </span>
+          )}
+        </div>
         <span className="count-badge">
           {filteredAndSorted.length} scene{filteredAndSorted.length !== 1 ? 's' : ''}
         </span>

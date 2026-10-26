@@ -11,6 +11,7 @@ interface HotspotDetailProps {
   onClose: () => void;
   onVerify: (status: VerificationStatus) => void;
   isVerifying: boolean;
+  isSampleData?: boolean;
 }
 
 function getScoreColor(val?: number): string {
@@ -25,6 +26,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
   onClose,
   onVerify,
   isVerifying,
+  isSampleData = false,
 }) => {
   if (!hotspot) {
     return (
@@ -41,6 +43,21 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
     <aside className="detail-panel" aria-label={`Detail for scene ${hotspot.date}`}>
       <div className="detail-header">
         <div className="detail-date">{hotspot.date}</div>
+        {isSampleData && (
+          <span
+            style={{
+              background: '#f59e0b',
+              color: '#000',
+              fontWeight: 800,
+              fontSize: '0.65rem',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              letterSpacing: '0.05em',
+            }}
+          >
+            SAMPLE DATA
+          </span>
+        )}
         <StatusBadge status={hotspot.verification_status} />
         <div className="spacer" />
         <button

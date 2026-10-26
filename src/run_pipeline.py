@@ -142,8 +142,11 @@ def main():
         return
 
     ref_lake = reference_lake(lake_masks, min_share=0.6)
+    from pipeline import ring
+    shore_band = ring(ref_lake, inside_px=3, outside_px=5)
     print(f"    Reference lake: {ref_lake.sum() * PIXEL_HA:.0f} ha "
           f"from {len(lake_masks)} clear scene(s).")
+    print(f"    Shore band: {shore_band.sum() * PIXEL_HA:.0f} ha ({shore_band.sum()} px).")
 
     # ── 3. Build reference vegetation mask from the reference date ────────────
     print(f"\n[3] Building reference vegetation mask from {REFERENCE_DATE} …")
@@ -171,7 +174,8 @@ def main():
             scene_id=ref_scene.id,
             date=ref_date_to_use,
             red=r_red, nir=r_nir, green=r_green, blue=r_blue,
-            scl=r_scl, lake_filled=r_lake,
+            scl=r_scl, lake_filled=ref_lake,
+            shore_band=shore_band,
             use_grabcut=True,
         )
         reference_patches = sv_ref.patches
@@ -199,17 +203,13 @@ def main():
 
         red, nir, green, blue, scl = bands
 
-        # Use the multi-date reference lake if available, else per-scene lake
-        lm = lake_mask(scl)
-        if lm is None:
-            lm = ref_lake
-
-        # ── vision ────────────────────────────────────────────────────────────
+        # ── vision (constrained strictly to open-water & shore band) ──────────
         sv = detect_patches(
             scene_id=scene.id,
             date=date,
             red=red, nir=nir, green=green, blue=blue,
-            scl=scl, lake_filled=lm,
+            scl=scl, lake_filled=ref_lake,
+            shore_band=shore_band,
             use_grabcut=True,
         )
 

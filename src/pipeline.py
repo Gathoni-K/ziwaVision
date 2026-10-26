@@ -33,6 +33,15 @@ def find_scenes(bbox, date_range, max_items=20):
 def read_band(item, name, bbox, as_float=True):
     """
     Read one band of one scene, cropped to bbox.
+
+    Reflectance scaling (resolved 2026-10-26):
+    Element84 Earth Search sets earthsearch:boa_offset_applied=True on all
+    scenes accessed via this catalogue. That means the stored DN values are
+    already bottom-of-atmosphere reflectance * 10000, with the +1000 offset
+    already subtracted by the provider. Typical water pixels read ~200-600,
+    vegetation ~1500-4000, cloud >8000. No manual (value-1000)/10000
+    correction is needed; dividing by 3000 for display (as done in the
+    explore/vision scripts) keeps the range visually comfortable.
     """
     with rasterio.open(item.assets[name].href) as src:
         bounds = transform_bounds("EPSG:4326", src.crs, *bbox)
@@ -93,13 +102,34 @@ def reference_lake(masks, min_share=0.6):
 
 def ring(mask, inside_px, outside_px):
     """
-    A strip around a mask's edge, 'inside_px'...it becomes a True/False grid.
+    A strip around a mask's edge: pixels that are within `outside_px` of the
+    mask boundary AND at least `inside_px` pixels inside the mask boundary.
+
+    Formula: inside the dilated region AND outside the eroded region.
+    This matches explore_tile.py which yields ~175 ha for the Winam Gulf box
+    (inside_px=3, outside_px=5). The previous formula omitted '== 0' on the
+    erode term, which made the band equal to the whole lake interior (~4536 ha).
     """
-
     k_out = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*outside_px + 1, 2*outside_px + 1))
-    k_in = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*inside_px + 1, 2*inside_px + 1))
+    k_in  = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2*inside_px  + 1, 2*inside_px  + 1))
 
-    return (cv2.dilate(mask, k_out) == 1) & (cv2.erode(mask, k_in))
+    band = (cv2.dilate(mask, k_out) == 1) & (cv2.erode(mask, k_in) == 0)
+
+    # ── sanity guard ──────────────────────────────────────────────────────────
+    # The shore band should be a narrow ring, not the whole lake interior.
+    # If it is larger than 5 % of the lake area something is wrong.
+    lake_px = int(mask.sum())
+    band_px = int(band.sum())
+    if lake_px > 0 and band_px > 0.05 * lake_px:
+        import warnings
+        warnings.warn(
+            f"ring(): band is {band_px} px ({band_px * PIXEL_HA:.0f} ha), "
+            f"which is {band_px / lake_px:.1%} of the lake ({lake_px} px). "
+            "Expected < 5 %. Check inside_px / outside_px arguments.",
+            stacklevel=2,
+        )
+
+    return band
 
 def ndvi_of(red, nir):
     """NDVI = (NIR - red) / (NIR + red). The 1e-6 avoids dividing by zero."""

@@ -75,7 +75,7 @@ Today's script (`explore_tile.py`) covers the first three boxes and part of the 
 - **Tile / scene:** Sentinel-2 divides the Earth into squares (e.g. `36MXE`). Tiles overlap a little, and a point near an edge may sit in two. Dunga is close to such an edge.
 - **Bands:** each band is a slice of light. Red, green and blue make a normal photo. Near-infrared (NIR) is invisible to us but shows plants strongly.
 - **Cloud cover metadata** (`eo:cloud_cover`) is a percentage for the **whole tile**, not for your box.
-- **Reflectance scaling:** the raw numbers are integers, not 0 to 1. Real reflectance is `(value - 1000) / 10000`. Our script doesn't apply this yet; it's on the to-do list (see section 6).
+- **Reflectance scaling:** the raw numbers are integers (0 to 10,000 surface reflectance). Resolved: `earthsearch:boa_offset_applied` is True for all scenes, so Element84 already applied the baseline correction. No extra `(value - 1000) / 10000` subtraction is needed (evidence on 2026-08-28 lake water pixels: red min=309, median=666, max=2737; NIR min=139, median=325, max=4109).
 
 ### 3.4 Remote sensing
 
@@ -155,7 +155,7 @@ Your box runs west 34.73 to east 34.83.
 1. In `explore_tile.py`, choose the 36MXE 07 Sep scene (it's the fourth in your list, so `items[3]`) and check that `red.shape` is about `(1100, 1100)`.
 2. Re-run the SCL block. You should now see `6` (water) in `np.unique`.
 3. Check how much of the box is cloud or no-data over the gulf. If it's too much, try the 12 Sep scene.
-4. Apply the reflectance scaling (`(value - 1000) / 10000`) to the colour/NIR bands and re-check your NDVI threshold.
+4. Reflectance scaling resolved: verified that `earthsearch:boa_offset_applied` is True and lake water pixels (2026-08-28) read normal reflectance (red min=309, median=666, max=2737; NIR min=139, median=325, max=4109). No extra `(value - 1000) / 10000` step is needed.
 5. Find the lake: take the water class, fill its holes with OpenCV morphology, and treat everything inside that shape as lake. Candidate hyacinth is NDVI-green *inside* the lake shape but not labelled as land.
 
 ---

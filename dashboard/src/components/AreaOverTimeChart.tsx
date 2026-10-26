@@ -5,12 +5,14 @@ interface AreaOverTimeChartProps {
   hotspots: Hotspot[];
   selectedDate?: string | null;
   onSelectDate?: (date: string) => void;
+  isSampleData?: boolean;
 }
 
 export const AreaOverTimeChart: React.FC<AreaOverTimeChartProps> = ({
   hotspots,
   selectedDate,
   onSelectDate,
+  isSampleData = false,
 }) => {
   if (hotspots.length < 2) return null;
 
@@ -41,9 +43,24 @@ export const AreaOverTimeChart: React.FC<AreaOverTimeChartProps> = ({
   return (
     <div className="chart-card">
       <div className="chart-header">
-        <div className="chart-title">
+        <div className="chart-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span>📈</span>
           <span>Candidate Vegetation Extent Trend</span>
+          {isSampleData && (
+            <span
+              style={{
+                background: '#f59e0b',
+                color: '#000',
+                fontWeight: 800,
+                fontSize: '0.65rem',
+                padding: '2px 6px',
+                borderRadius: '3px',
+                letterSpacing: '0.05em',
+              }}
+            >
+              SAMPLE DATA
+            </span>
+          )}
         </div>
         <div className="chart-sub">Area in hectares (ha) over observation dates</div>
       </div>

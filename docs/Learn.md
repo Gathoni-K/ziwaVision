@@ -156,7 +156,7 @@ Status markers: **[ran]** you ran it and saw output. **[added]** code was given 
   ```
   `1e-6` stops a division by zero.
 - **Used for:** the vegetation signal. At 0.3 it flags about twice as much as ESA's own vegetation label, mostly dry cropland (465,568 px vs 232,308 px on 7 Sep).
-- **Open item:** we have not applied the reflectance offset `(value - 1000) / 10000`. The catalogue has a field, `earthsearch:boa_offset_applied`, that says whether it's already applied. Print it and check before numbers go in the report.
+- **Reflectance offset (resolved):** `earthsearch:boa_offset_applied` is True for all scenes; Element84 already applied the baseline correction. Over lake water on 2026-08-28, red min=309, median=666, max=2737 and NIR min=139, median=325, max=4109 — these are normal 0 to 10,000 reflectance values, so no extra `(value - 1000) / 10000` step is needed.
 
 ### 3.3 The Scene Classification Layer (SCL)
 - **What:** ESA's per-pixel labels. Used here: 2 dark, 4 vegetation, 5 not vegetated, 6 water, 7 unclassified, and 0, 1, 3, 8, 9, 10 for no data, defective, shadow, cloud and cirrus.
@@ -327,7 +327,7 @@ Build the shore band once from the reference lake, then measure inside it on eac
 ## 9. Still ahead
 
 - Floating-vegetation and water indices (FAI, NDWI/MNDWI) and the 20 m bands
-- Reflectance offset check
+- Reflectance offset check (resolved: `earthsearch:boa_offset_applied` is True; red/NIR water pixels on 2026-08-28 confirm normal 0–10,000 reflectance)
 - Climate data (`acmadDL`) and the risk score
 - `analyse()` as one function; results per date as a table
 - AWS: S3, DynamoDB, Lambda or Fargate, Graviton vs x86 timing

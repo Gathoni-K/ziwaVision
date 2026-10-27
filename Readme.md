@@ -1,9 +1,8 @@
-# ZiwaVision — Autonomous Visual Hotspot Verification
+# ZiwaVision: Autonomous Visual Hotspot Verification
 
 **Satellite-Derived Environmental Inspection Prototype for Lake Victoria**  
 **Submission for the OpenCV AI Competition 2026, powered by AWS**  
 - **Primary Focus Track:** Agentic Vision with OpenCV 5  
-- **Secondary Track:** Best Use of COOL (AWS Graviton)  
 - **Parent Initiative:** [ZiwaClear](https://ziwa-clear.vercel.app/) — A climate-smart biomass marketplace transforming invasive water hyacinth into clean bio-products.  
 
 ---
@@ -190,7 +189,7 @@ npm run dev
 
 ---
 
-## AWS Deployment & Best Use of COOL (Graviton)
+## AWS Deployment
 
 ZiwaVision is packaged with an AWS Serverless Application Model (SAM) template in [`deploy/template.yaml`](file:///home/grace/Projects/CODEINE/hackathonTingz/ZiwaVision/deploy/template.yaml). The Lambda function runs as a **container image** (not a ZIP package) so that native shared libraries required by `rasterio` and `opencv-python-headless` are available at runtime.
 

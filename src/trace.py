@@ -52,10 +52,21 @@ def _s3_client():
 
 def append_trace(record: TraceRecord, traces_dir: str = _DEFAULT_TRACES_DIR) -> str:
     line = json.dumps(record.to_dict(), sort_keys=True) + "\n"
-    os.makedirs(traces_dir, exist_ok=True)
     path = os.path.join(traces_dir, f"{record.date}.jsonl")
-    with open(path, "a", encoding="utf-8") as handle:
-        handle.write(line)
+    try:
+        os.makedirs(traces_dir, exist_ok=True)
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(line)
+    except OSError:
+        # Fall back to /tmp in read-only environments like AWS Lambda
+        try:
+            tmp_dir = "/tmp/traces"
+            os.makedirs(tmp_dir, exist_ok=True)
+            path = os.path.join(tmp_dir, f"{record.date}.jsonl")
+            with open(path, "a", encoding="utf-8") as handle:
+                handle.write(line)
+        except Exception:
+            pass
 
     if RESULTS_BUCKET:
         try:

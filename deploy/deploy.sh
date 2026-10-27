@@ -1,32 +1,33 @@
 #!/usr/bin/env bash
-# deploy/deploy.sh — ZiwaVision AWS deployment script
+# deploy/deploy.sh — ZiwaVision AWS backend deployment script
 #
 # Prerequisites:
 #   aws CLI configured   (aws configure or ~/.aws/credentials)
 #   AWS SAM CLI >= 1.105 (pip install aws-sam-cli)
 #   Docker running       (required to build the Lambda container image)
-#   AWS ECR repository   (create once: aws ecr create-repository --repository-name ziwavision)
 #
 #   SSM SecureString parameter holding the API key must exist BEFORE deployment:
 #     aws ssm put-parameter \
 #       --name /ziwavision/prod/api-key \
 #       --type SecureString \
-#       --value "<your-secret-key-min-16-chars>"
+#       --value "<your-secret-key-min-16-chars>" \
+#       --region eu-west-1
 #
 # Required environment variables:
-#   BUCKET         — unique S3 bucket name (also used as the CloudFormation parameter)
 #   AWS_ACCOUNT_ID — your 12-digit AWS account ID
 #
 # Optional environment variables:
-#   AWS_DEFAULT_REGION  (default: us-east-1)
+#   BUCKET              (default: ziwavision; results bucket will be ${BUCKET}-results)
+#   AWS_DEFAULT_REGION  (default: eu-west-1)
 #   ECR_REPO            (default: ziwavision)
 #   IMAGE_TAG           (default: latest)
 #   STACK_NAME          (default: ziwavision)
 #   SSM_API_KEY_PARAM   (default: /ziwavision/prod/api-key)
 #
 # Usage:
-#   export BUCKET=ziwavision-yourname-2026
-#   export AWS_ACCOUNT_ID=123456789012
+#   export AWS_ACCOUNT_ID=891858636219
+#   export AWS_DEFAULT_REGION=eu-west-1
+#   export BUCKET=ziwavision-results-gathoni
 #   bash deploy/deploy.sh
 
 set -euo pipefail
@@ -35,9 +36,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BUCKET="${BUCKET:-ziwavision-dashboard}"
+BUCKET="${BUCKET:-ziwavision}"
 RESULTS_BUCKET="${RESULTS_BUCKET:-${BUCKET}-results}"
-REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+REGION="${AWS_DEFAULT_REGION:-eu-west-1}"
 ACCOUNT_ID="${AWS_ACCOUNT_ID:?ERROR: AWS_ACCOUNT_ID must be set}"
 ECR_REPO="${ECR_REPO:-ziwavision}"
 IMAGE_TAG="${IMAGE_TAG:-latest}"
@@ -45,24 +46,27 @@ STACK_NAME="${STACK_NAME:-ziwavision}"
 SSM_API_KEY_PARAM="${SSM_API_KEY_PARAM:-/ziwavision/prod/api-key}"
 ECR_REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
 IMAGE_URI="${ECR_REGISTRY}/${ECR_REPO}:${IMAGE_TAG}"
-SAM_BUILD_DIR="$ROOT/.aws-sam"
 
 echo "=========================================="
-echo "ZiwaVision AWS Deployment"
-echo "Bucket:    $BUCKET"
-echo "Region:    $REGION"
-echo "Image URI: $IMAGE_URI"
-echo "Stack:     $STACK_NAME"
+echo "ZiwaVision AWS Backend Deployment"
+echo "Results Bucket Base: $BUCKET"
+echo "Region:              $REGION"
+echo "Image URI:           $IMAGE_URI"
+echo "Stack:               $STACK_NAME"
 echo "=========================================="
 
 # ── 0. Validate SSM parameter exists ────────────────────────────────────────
 echo ""
-echo "[0] Checking SSM parameter ${SSM_API_KEY_PARAM}..."
-if ! aws ssm get-parameter --name "$SSM_API_KEY_PARAM" --with-decryption \
-     --region "$REGION" --query "Parameter.Value" --output text > /dev/null 2>&1; then
-  echo "ERROR: SSM parameter '${SSM_API_KEY_PARAM}' not found or not accessible."
-  echo "Create it with:"
-  echo "  aws ssm put-parameter --name '${SSM_API_KEY_PARAM}' --type SecureString --value '<your-key>'"
+echo "[0] Checking SSM parameter ${SSM_API_KEY_PARAM} in region ${REGION}..."
+if ! aws ssm get-parameter --name "$SSM_API_KEY_PARAM" \
+     --region "$REGION" --query "Parameter.Name" --output text > /dev/null 2>&1; then
+  echo "ERROR: SSM parameter '${SSM_API_KEY_PARAM}' not found or not accessible in region '${REGION}'."
+  echo "Create it securely with:"
+  echo "  aws ssm put-parameter \\"
+  echo "    --name '${SSM_API_KEY_PARAM}' \\"
+  echo "    --type SecureString \\"
+  echo "    --value '<your-secret-key-min-16-chars>' \\"
+  echo "    --region '${REGION}'"
   exit 1
 fi
 echo "   ✓ SSM parameter found."
@@ -78,14 +82,30 @@ else
   echo "[1] results.json exists — skipping pipeline run."
 fi
 
-# ── 2. Build and push the container image ─────────────────────────────────────
+# ── 2. Ensure ECR repository exists ──────────────────────────────────────────
 echo ""
-echo "[2] Authenticating Docker with ECR..."
+echo "[2] Ensuring ECR repository '${ECR_REPO}' exists..."
+if ! aws ecr describe-repositories --repository-names "$ECR_REPO" --region "$REGION" >/dev/null 2>&1; then
+  echo "   Creating ECR repository '${ECR_REPO}' in ${REGION}..."
+  aws ecr create-repository \
+    --repository-name "$ECR_REPO" \
+    --region "$REGION" \
+    --image-scanning-configuration scanOnPush=true \
+    --encryption-configuration encryptionType=AES256 >/dev/null
+  echo "   ✓ ECR repository created."
+else
+  echo "   ✓ ECR repository '${ECR_REPO}' exists."
+fi
+
+# ── 3. Authenticate Docker with ECR ───────────────────────────────────────────
+echo ""
+echo "[3] Authenticating Docker with ECR..."
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$ECR_REGISTRY"
 
+# ── 4. Build the container image ─────────────────────────────────────────────
 echo ""
-echo "[3] Building Lambda container image..."
+echo "[4] Building Lambda container image (linux/amd64)..."
 # Build context is the repository root so the Dockerfile can COPY src/ and
 # deploy/lambda_requirements.txt from their correct relative paths.
 docker build \
@@ -95,21 +115,22 @@ docker build \
   --tag "${ECR_REPO}:${IMAGE_TAG}" \
   "$ROOT"
 
+# ── 5. Tag and push image to ECR ──────────────────────────────────────────────
 echo ""
-echo "[4] Tagging and pushing image to ECR..."
+echo "[5] Tagging and pushing image to ECR..."
 docker tag "${ECR_REPO}:${IMAGE_TAG}" "${IMAGE_URI}"
 docker push "${IMAGE_URI}"
 echo "   ✓ Pushed: $IMAGE_URI"
 
-# ── 3. SAM deploy (image-based; no sam build step needed for pre-built image) ─
+# ── 6. SAM deploy (image-based; uses --resolve-s3 to manage packaging bucket) ─
 echo ""
-echo "[5] Deploying Lambda + API Gateway via SAM..."
+echo "[6] Deploying Lambda + API Gateway via SAM..."
 sam deploy \
   --template-file "$ROOT/deploy/template.yaml" \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \
-  --s3-bucket "$BUCKET" \
-  --s3-prefix sam-packages \
+  --resolve-s3 \
+  --resolve-image-repos \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides \
     BucketName="$BUCKET" \
@@ -118,63 +139,60 @@ sam deploy \
     ImageUri="$IMAGE_URI" \
   --no-fail-on-empty-changeset
 
-# ── 4. Retrieve stack outputs ─────────────────────────────────────────────────
+# ── 7. Retrieve stack outputs ─────────────────────────────────────────────────
 echo ""
-echo "[6] Retrieving stack outputs..."
+echo "[7] Retrieving stack outputs..."
 API_URL=$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \
   --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
   --output text)
 
-DASHBOARD_URL=$(aws cloudformation describe-stacks \
+RESULTS_BUCKET_NAME=$(aws cloudformation describe-stacks \
   --stack-name "$STACK_NAME" \
   --region "$REGION" \
-  --query "Stacks[0].Outputs[?OutputKey=='DashboardUrl'].OutputValue" \
+  --query "Stacks[0].Outputs[?OutputKey=='ResultsBucketName'].OutputValue" \
   --output text)
 
-echo "   API URL:       $API_URL"
-echo "   Dashboard URL: $DASHBOARD_URL"
+LAMBDA_NAME=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionName'].OutputValue" \
+  --output text)
 
-# ── 5. Build the Vite dashboard ───────────────────────────────────────────────
-echo ""
-echo "[7] Building Vite dashboard..."
-# Inject the live API Gateway URL so the compiled JS bundle talks to prod,
-# not localhost. This file is gitignored and generated fresh each deploy.
-ENV_PROD="$ROOT/dashboard/.env.production"
-if [ -n "$API_URL" ]; then
-  echo "VITE_API_BASE_URL=$API_URL" > "$ENV_PROD"
-  echo "   Wrote $ENV_PROD → VITE_API_BASE_URL=$API_URL"
-fi
-cd "$ROOT/dashboard"
-npm install --silent
-npm run build --silent
-cd "$ROOT"
+LAMBDA_ARN=$(aws cloudformation describe-stacks \
+  --stack-name "$STACK_NAME" \
+  --region "$REGION" \
+  --query "Stacks[0].Outputs[?OutputKey=='LambdaFunctionArn'].OutputValue" \
+  --output text)
 
-# ── 6. Sync dashboard/dist to S3 ─────────────────────────────────────────────
+# ── 8. Upload results + overlays to private results bucket ─────────────────────
+RESULTS_BUCKET_TARGET="${RESULTS_BUCKET_NAME:-$RESULTS_BUCKET}"
 echo ""
-echo "[8] Syncing dashboard/dist to S3..."
-aws s3 sync "$ROOT/dashboard/dist/" "s3://$BUCKET/" \
-  --acl public-read \
-  --cache-control "max-age=300"
-
-# ── 7. Upload results + overlays to private results bucket ─────────────────────
-echo ""
-echo "[9] Uploading results.json to private results bucket..."
-aws s3 cp "$ROOT/outputs/results.json" "s3://$RESULTS_BUCKET/data/results.json" \
+echo "[8] Uploading results.json to private results bucket (${RESULTS_BUCKET_TARGET})..."
+aws s3 cp "$ROOT/outputs/results.json" "s3://$RESULTS_BUCKET_TARGET/data/results.json" \
+  --region "$REGION" \
   --content-type "application/json"
 
 if [ -d "$ROOT/outputs/overlays" ]; then
-  echo "[10] Uploading overlay images to private results bucket..."
-  aws s3 sync "$ROOT/outputs/overlays/" "s3://$RESULTS_BUCKET/overlays/"
+  echo "    Uploading overlay images to private results bucket..."
+  aws s3 sync "$ROOT/outputs/overlays/" "s3://$RESULTS_BUCKET_TARGET/overlays/" \
+    --region "$REGION"
 fi
 
 # ── Done ──────────────────────────────────────────────────────────────────────
 echo ""
 echo "=========================================="
-echo "✓ Deployment complete!"
+echo "✓ Backend deployment complete!"
 echo ""
-echo "  Dashboard:  $DASHBOARD_URL"
-echo "  API:        $API_URL"
-echo "  Health:     $API_URL/health"
+echo "Deployed AWS Resources:"
+echo "  API Gateway URL:        $API_URL"
+echo "  Private Results Bucket: $RESULTS_BUCKET_NAME"
+echo "  Lambda Function Name:   $LAMBDA_NAME"
+echo "  Lambda Function ARN:    $LAMBDA_ARN"
+echo "  Health Endpoint:        $API_URL/health"
+echo ""
+echo "Frontend Configuration (Vercel):"
+echo "  Set the following environment variable in your Vercel project:"
+echo "    VITE_API_BASE_URL=$API_URL"
 echo "=========================================="

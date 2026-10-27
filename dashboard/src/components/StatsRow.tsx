@@ -13,7 +13,7 @@ export const StatsRow: React.FC<StatsRowProps> = ({ hotspots, isSampleData = fal
   const needsReview = hotspots.filter((h) => h.verification_status === 'needs_review').length;
 
   return (
-    <div className="stats-row" role="region" aria-label="Summary statistics">
+    <section className="stats-row"  aria-label="Summary statistics">
       <div className="stat-card" style={{ position: 'relative' }}>
         {isSampleData && (
           <span style={{
@@ -48,6 +48,6 @@ export const StatsRow: React.FC<StatsRowProps> = ({ hotspots, isSampleData = fal
         <div className="value">{needsReview}</div>
         <div className="sub">awaiting verification</div>
       </div>
-    </div>
+    </section>
   );
 };

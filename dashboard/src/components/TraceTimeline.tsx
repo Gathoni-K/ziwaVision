@@ -41,9 +41,8 @@ export const TraceTimeline: React.FC<TraceTimelineProps> = ({
   const formattedTime = decidedAt ? new Date(decidedAt).toLocaleString() : 'Recent run';
 
   return (
-    <div
+    <section
       className="detail-reason"
-      role="region"
       aria-label="Agent decision audit trace"
       style={{ borderLeftColor: defaultColor }}
     >
@@ -61,9 +60,13 @@ export const TraceTimeline: React.FC<TraceTimelineProps> = ({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '6px' }}>
           {traces.map((tr, idx) => {
             const decColor = ACTION_COLORS[tr.decision || ''] || 'var(--text)';
+            const traceKey =
+              tr.written_at ||
+              (tr.step !== undefined ? `${tr.scene_id ?? 'trace'}-step-${tr.step}` : null) ||
+              `${tr.scene_id ?? 'trace'}-${tr.decision ?? 'decision'}-${tr.rule ?? ''}`;
             return (
               <div
-                key={idx}
+                key={traceKey}
                 style={{
                   background: 'rgba(255, 255, 255, 0.03)',
                   border: '1px solid rgba(255, 255, 255, 0.06)',
@@ -150,7 +153,7 @@ export const TraceTimeline: React.FC<TraceTimelineProps> = ({
           </div>
         </>
       )}
-    </div>
+    </section>
   );
 };
 

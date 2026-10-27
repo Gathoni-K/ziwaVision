@@ -3,14 +3,14 @@ Transform: AWS::Serverless-2016-10-31
 
 Description: >
   ZiwaVision — Visual Hotspot Verification
-  Lambda container image (Python 3.12 + OpenCV 5) + API Gateway + S3 static dashboard.
+  Lambda container image (Python 3.12 + OpenCV 5) + API Gateway + S3 private results bucket.
   OpenCV AI Competition 2026, powered by AWS.
 
 Parameters:
   BucketName:
     Type: String
-    Description: Unique S3 bucket name for the dashboard + results data
-    Default: ziwavision-dashboard
+    Description: Base name for the private S3 results bucket (creates <BucketName>-results)
+    Default: ziwavision
 
   Environment:
     Type: String
@@ -29,8 +29,8 @@ Parameters:
     Type: String
     Description: >
       ECR image URI for the Lambda container, e.g.
-      123456789012.dkr.ecr.us-east-1.amazonaws.com/ziwavision:latest
-      Build and push with: bash deploy/push_image.sh
+      123456789012.dkr.ecr.eu-west-1.amazonaws.com/ziwavision:latest
+      Build and push with: bash deploy/deploy.sh
 
 # ── Globals ────────────────────────────────────────────────────────────────────
 Globals:
@@ -46,41 +46,11 @@ Globals:
 
 Resources:
 
-  # ── S3 bucket: static dashboard website ───────────────────────────────────────
-  DashboardBucket:
-    Type: AWS::S3::Bucket
-    Properties:
-      BucketName: !Ref BucketName
-      WebsiteConfiguration:
-        IndexDocument: index.html
-        ErrorDocument: index.html
-      CorsConfiguration:
-        CorsRules:
-          - AllowedHeaders: ['*']
-            AllowedMethods: [GET, PUT, POST, HEAD]
-            AllowedOrigins: ['*']
-            MaxAge: 3600
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls:       false
-        BlockPublicPolicy:     false
-        IgnorePublicAcls:      false
-        RestrictPublicBuckets: false
-
-  DashboardBucketPolicy:
-    Type: AWS::S3::BucketPolicy
-    Properties:
-      Bucket: !Ref DashboardBucket
-      PolicyDocument:
-        Statement:
-          - Sid: PublicReadGetObject
-            Effect: Allow
-            Principal: '*'
-            Action: s3:GetObject
-            Resource: !Sub 'arn:aws:s3:::${BucketName}/*'
-
   # ── S3 bucket: private results & runs data ────────────────────────────────────
   ResultsBucket:
     Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub '${BucketName}-results'
       PublicAccessBlockConfiguration:
@@ -179,21 +149,17 @@ Resources:
         AllowOrigin:  "'*'"
 
 Outputs:
-  DashboardUrl:
-    Description: S3 website URL for the static dashboard
-    Value: !GetAtt DashboardBucket.WebsiteURL
-
   ApiUrl:
     Description: API Gateway endpoint URL
     Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
 
-  BucketName:
-    Description: S3 dashboard bucket name
-    Value: !Ref BucketName
-
   ResultsBucketName:
     Description: S3 private results bucket name
     Value: !Ref ResultsBucket
+
+  LambdaFunctionName:
+    Description: Name of the deployed Lambda function
+    Value: !Ref ApiFunction
 
   LambdaFunctionArn:
     Description: ARN of the deployed Lambda function

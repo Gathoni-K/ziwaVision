@@ -12,7 +12,7 @@ export const OverlayViewer: React.FC<OverlayViewerProps> = ({ date }) => {
   const imgUrl = getOverlayUrl(date);
 
   return (
-    <div className="detail-overlay" role="region" aria-label="Satellite imagery overlay">
+    <section className="detail-overlay" aria-label="Satellite imagery overlay">
       {isLoading && !hasError && (
         <div
           style={{
@@ -51,6 +51,6 @@ export const OverlayViewer: React.FC<OverlayViewerProps> = ({ date }) => {
       )}
 
       <div className="overlay-label">Sentinel-2 · Dunga Beach, Winam Gulf</div>
-    </div>
+    </section>
   );
 };

@@ -41,7 +41,7 @@ class SceneContext:
     alternate_scenes: Sequence["SceneContext"] = field(default_factory=tuple)
 
 
-def validate_context_shapes(context: SceneContext) -> Optional[Dict[str, Any]]:
+def validate_context_shapes(context: SceneContext) -> Optional[Dict[str, any]]:
     """
     Validate array dimensions and alignment before analysis.
     Returns None if shapes match; returns a mismatch summary dict if incompatible.

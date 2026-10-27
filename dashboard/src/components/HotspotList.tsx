@@ -106,7 +106,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
         />
       </div>
 
-      <div className="table-wrap" role="region" aria-label="Hotspot table">
+      <section className="table-wrap" aria-label="Hotspot table">
         {isLoading ? (
           <div className="loading-state">
             <div className="spinner" role="status" aria-label="Loading observations" />
@@ -115,15 +115,14 @@ export const HotspotList: React.FC<HotspotListProps> = ({
         ) : filteredAndSorted.length === 0 ? (
           <div className="no-results">No candidate observations match your filter.</div>
         ) : (
-          <table role="grid" aria-label="Hotspot observation log">
+          <table aria-label="Hotspot observation log">
             <thead>
-              <tr role="row">
+              <tr>
                 <th
                   onClick={() => handleSort('date')}
                   className={sortKey === 'date' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('date')}
-                  role="columnheader"
                   aria-sort={
                     sortKey === 'date'
                       ? sortDir === 1
@@ -139,7 +138,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'location' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('location')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Location {renderSortIcon('location')}
                 </th>
@@ -148,7 +147,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'n_patches' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('n_patches')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Patches {renderSortIcon('n_patches')}
                 </th>
@@ -157,7 +156,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'total_area_ha' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('total_area_ha')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Area (ha) {renderSortIcon('total_area_ha')}
                 </th>
@@ -166,7 +165,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'image_quality' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('image_quality')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Quality {renderSortIcon('image_quality')}
                 </th>
@@ -175,7 +174,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'mean_patch_confidence' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('mean_patch_confidence')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Confidence {renderSortIcon('mean_patch_confidence')}
                 </th>
@@ -184,7 +183,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'action' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('action')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Decision {renderSortIcon('action')}
                 </th>
@@ -193,7 +192,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
                   className={sortKey === 'verification_status' ? 'sorted' : ''}
                   tabIndex={0}
                   onKeyDown={(e) => e.key === 'Enter' && handleSort('verification_status')}
-                  role="columnheader"
+                  scope="col"
                 >
                   Status {renderSortIcon('verification_status')}
                 </th>
@@ -212,7 +211,7 @@ export const HotspotList: React.FC<HotspotListProps> = ({
             </tbody>
           </table>
         )}
-      </div>
+      </section>
     </div>
   );
 };

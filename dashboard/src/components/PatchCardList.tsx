@@ -18,7 +18,7 @@ export const PatchCardList: React.FC<PatchCardListProps> = ({ patches }) => {
   }
 
   return (
-    <div className="detail-patches" role="region" aria-label="Candidate floating vegetation patches">
+    <section className="detail-patches" aria-label="Candidate floating vegetation patches">
       <h3>Candidate Floating Vegetation ({patches.length})</h3>
       {patches.map((p) => (
         <div key={p.patch_id} className="patch-card" id={`patch-${p.patch_id}`}>
@@ -52,6 +52,6 @@ export const PatchCardList: React.FC<PatchCardListProps> = ({ patches }) => {
           )}
         </div>
       ))}
-    </div>
+    </section>
   );
 };

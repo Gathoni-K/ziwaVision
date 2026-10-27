@@ -19,9 +19,8 @@ export const VerifyControls: React.FC<VerifyControlsProps> = ({
   const isRejected = currentStatus === 'rejected';
 
   return (
-    <div
+    <section
       className="detail-actions"
-      role="group"
       aria-label="Human verification decision controls"
     >
       <button
@@ -59,6 +58,6 @@ export const VerifyControls: React.FC<VerifyControlsProps> = ({
       >
         {isRejected ? '✕ Rejected' : '✕ Reject'}
       </button>
-    </div>
+    </section>
   );
 };

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Hotspot } from '../types/hotspot';
+import type React from 'react';
+import type { Hotspot } from '../types/hotspot';
 
 interface AreaOverTimeChartProps {
   hotspots: Hotspot[];
@@ -113,10 +113,20 @@ export const AreaOverTimeChart: React.FC<AreaOverTimeChartProps> = ({
           {points.map((p) => {
             const isSelected = p.hotspot.date === selectedDate;
             return (
+              // biome-ignore lint/a11y/useSemanticElements: SVG g element cannot be replaced with an HTML button
               <g
                 key={p.hotspot.date}
-                style={{ cursor: onSelectDate ? 'pointer' : 'default' }}
+                role="button"
+                tabIndex={0}
+                aria-label={`Select observation date ${p.hotspot.date}`}
+                style={{ cursor: onSelectDate ? 'pointer' : 'default', outline: 'none' }}
                 onClick={() => onSelectDate?.(p.hotspot.date)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectDate?.(p.hotspot.date);
+                  }
+                }}
               >
                 <circle
                   cx={p.x}

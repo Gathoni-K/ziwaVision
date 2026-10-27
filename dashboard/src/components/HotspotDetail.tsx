@@ -69,6 +69,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
         <StatusBadge status={hotspot.verification_status} />
         <div className="spacer" />
         <button
+          type="button"
           className="close-btn"
           onClick={onClose}
           aria-label="Close detail panel"
@@ -82,7 +83,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
       <OverlayViewer date={hotspot.date} />
 
       {/* Metric Chips */}
-      <div className="detail-metrics" role="region" aria-label="Scene metrics">
+      <section className="detail-metrics" aria-label="Scene metrics">
         <div className="metric-chip">
           <div className="m-label">Image Quality</div>
           <div
@@ -126,7 +127,7 @@ export const HotspotDetail: React.FC<HotspotDetailProps> = ({
             {hotspot.lake_area_ha ? `${Math.round(hotspot.lake_area_ha)} ha` : '—'}
           </div>
         </div>
-      </div>
+      </section>
 
       {/* Candidate Floating Vegetation List */}
       <PatchCardList patches={hotspot.patch_details || []} />

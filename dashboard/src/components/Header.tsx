@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { NavLink } from 'react-router-dom';
 
 interface HeaderProps {
@@ -8,10 +8,10 @@ interface HeaderProps {
 
 export const Header: React.FC<HeaderProps> = ({ apiConnected, isSimulated = false }) => {
   return (
-    <header className="header" role="banner">
+    <header className="header">
       <NavLink to="/" aria-label="ZiwaVision home" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
         <img
-          src="/logo.jpg"
+          src="/ziwaVisionLogo.png"
           alt="ZiwaVision, Lake Victoria satellite monitoring"
           className="header-logo"
         />

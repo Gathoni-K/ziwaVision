@@ -45,9 +45,14 @@ from flask_cors import CORS
 
 # ── path setup ─────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_ROOT = os.path.dirname(_HERE)
+if os.environ.get("LAMBDA_TASK_ROOT"):
+    _ROOT = os.environ["LAMBDA_TASK_ROOT"]
+else:
+    _ROOT = os.path.dirname(_HERE)
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
+
+import re
 
 from agent import apply_verification
 from inspector import run_live_inspection
@@ -86,7 +91,8 @@ def _resolve_api_key() -> Optional[str]:
     if param_name:
         try:
             import boto3  # noqa: PLC0415
-            ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+            region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
+            ssm = boto3.client("ssm", region_name=region)
             resp = ssm.get_parameter(Name=param_name, WithDecryption=True)
             value = resp["Parameter"]["Value"].strip()
             if len(value) >= 16:
@@ -112,6 +118,15 @@ if not _AUTH_CONFIGURED:
         "Human-review endpoints will fail closed (HTTP 503) until properly configured."
     )
 
+
+def _get_api_key() -> Optional[str]:
+    """Retrieve or re-resolve the API key dynamically."""
+    global VERIFY_API_KEY, _AUTH_CONFIGURED
+    if VERIFY_API_KEY is None:
+        VERIFY_API_KEY = _resolve_api_key()
+        _AUTH_CONFIGURED = VERIFY_API_KEY is not None
+    return VERIFY_API_KEY
+
 # S3 — set by the SAM template via environment variables.
 RESULTS_BUCKET = os.environ.get("RESULTS_BUCKET")
 S3_RESULTS_KEY = "data/results.json"
@@ -135,7 +150,28 @@ _ELIGIBLE_FOR_VERIFICATION = frozenset(
 _NOTES_MAX_LEN = 1000
 
 app = Flask(__name__)
-CORS(app)
+
+# Deliberate CORS configuration: allow local development and Vercel preview/production
+# deployments, plus any custom domain specified via CORS_ALLOWED_ORIGINS.
+_default_cors_origins = [
+    re.compile(r"^http://localhost(:\d+)?$"),
+    re.compile(r"^http://127\.0\.0\.1(:\d+)?$"),
+    re.compile(r"^https://.*\.vercel\.app$"),
+]
+_extra_cors = os.environ.get("CORS_ALLOWED_ORIGINS", "")
+if _extra_cors:
+    for _origin in _extra_cors.split(","):
+        _origin_clean = _origin.strip()
+        if _origin_clean:
+            _default_cors_origins.append(_origin_clean)
+
+CORS(
+    app,
+    origins=_default_cors_origins,
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-API-Key"],
+    supports_credentials=True,
+)
 
 
 # ── S3 / local persistence ─────────────────────────────────────────────────────
@@ -173,9 +209,12 @@ def _save_results(results: list) -> None:
             return
         except Exception as exc:  # noqa: BLE001
             print(f"S3 _save_results failed ({exc}); falling back to local file")
-    os.makedirs(os.path.dirname(RESULTS_PATH), exist_ok=True)
-    with open(RESULTS_PATH, "w") as f:
-        f.write(payload)
+    try:
+        os.makedirs(os.path.dirname(RESULTS_PATH), exist_ok=True)
+        with open(RESULTS_PATH, "w") as f:
+            f.write(payload)
+    except OSError:
+        pass
 
 
 RUNS_DIR = os.path.join(OUTPUTS_DIR, "runs")
@@ -195,9 +234,12 @@ def _save_run(run_data: dict) -> None:
             )
         except Exception as exc:  # noqa: BLE001
             print(f"S3 _save_run failed ({exc}); saving locally")
-    os.makedirs(RUNS_DIR, exist_ok=True)
-    with open(os.path.join(RUNS_DIR, f"{run_id}.json"), "w") as f:
-        f.write(payload)
+    try:
+        os.makedirs(RUNS_DIR, exist_ok=True)
+        with open(os.path.join(RUNS_DIR, f"{run_id}.json"), "w") as f:
+            f.write(payload)
+    except OSError:
+        pass
 
 
 def _load_run(run_id: str) -> Optional[dict]:
@@ -217,6 +259,22 @@ def _load_run(run_id: str) -> Optional[dict]:
 
 def _list_runs() -> list:
     runs = []
+    if RESULTS_BUCKET:
+        try:
+            s3 = _s3_client()
+            resp = s3.list_objects_v2(Bucket=RESULTS_BUCKET, Prefix=S3_RUNS_PREFIX)
+            for item in sorted(resp.get("Contents", []), key=lambda x: x["LastModified"], reverse=True):
+                key = item["Key"]
+                if key.endswith(".json"):
+                    try:
+                        obj = s3.get_object(Bucket=RESULTS_BUCKET, Key=key)
+                        runs.append(json.loads(obj["Body"].read().decode("utf-8")))
+                    except Exception:
+                        continue
+            if runs:
+                return runs
+        except Exception as exc:  # noqa: BLE001
+            print(f"S3 _list_runs failed ({exc}); falling back to local file")
     if os.path.exists(RUNS_DIR):
         for fname in sorted(os.listdir(RUNS_DIR), reverse=True):
             if fname.endswith(".json"):
@@ -268,7 +326,8 @@ def _check_auth() -> bool:
     Returns False (not 503) so callers can distinguish misconfiguration from
     bad credentials.
     """
-    if not _AUTH_CONFIGURED or not VERIFY_API_KEY:
+    key = _get_api_key()
+    if not key:
         return False
     auth_header = request.headers.get("Authorization", "")
     api_key_header = request.headers.get("X-API-Key", "")
@@ -282,13 +341,14 @@ def _check_auth() -> bool:
     # Constant-time comparison to prevent timing attacks
     return hmac.compare_digest(
         token.encode("utf-8"),
-        VERIFY_API_KEY.encode("utf-8"),
+        key.encode("utf-8"),
     )
 
 
 def _auth_error_response():
     """Return the appropriate 401/503 based on configuration state."""
-    if not _AUTH_CONFIGURED:
+    key = _get_api_key()
+    if not key:
         return jsonify({
             "ok": False,
             "error": "Human-review authentication is not configured on this server.",
@@ -305,12 +365,36 @@ def _auth_error_response():
 
 # ── routes ─────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+def root():
+    auth_ready = _get_api_key() is not None
+    return jsonify({
+        "service": "ZiwaVision API",
+        "status": "healthy",
+        "auth_configured": auth_ready,
+        "endpoints": [
+            "/health",
+            "/api/hotspots",
+            "/api/hotspots/<hotspot_id>",
+            "/api/hotspots/by-date/<date>",
+            "/api/hotspots/<hotspot_id>/verify",
+            "/api/verify",
+            "/api/inspect",
+            "/api/runs",
+            "/api/runs/<run_id>",
+            "/api/traces/<date>",
+            "/api/overlay/<date>",
+            "/api/reference",
+        ],
+    })
+
+
 @app.get("/health")
 def health():
     return jsonify({
         "status": "ok",
         "service": "ZiwaVision API",
-        "auth_configured": _AUTH_CONFIGURED,
+        "auth_configured": _get_api_key() is not None,
     })
 
 

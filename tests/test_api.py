@@ -111,11 +111,16 @@ SAMPLE_ID_1 = _hotspot_id(SAMPLE_RESULTS[1])  # "s2a-36mxe-20260828-0-l2a" (skip
 SAMPLE_ID_2 = _hotspot_id(SAMPLE_RESULTS[2])  # "s2c-36mxe-20260823-0-l2a" (needs_verification)
 
 
-def _make_auth_header() -> dict:
-    return {"Authorization": f"Bearer {VERIFY_API_KEY}"}
-
 
 import copy
+
+# A stable test key used by the `client` fixture. Must be >= 16 chars.
+_TEST_API_KEY = "test-key-for-unit-tests-only-32chars"
+
+
+def _make_auth_header() -> dict:
+    return {"Authorization": f"Bearer {_TEST_API_KEY}"}
+
 
 @pytest.fixture
 def client(monkeypatch):
@@ -123,6 +128,9 @@ def client(monkeypatch):
     monkeypatch.setattr(api_module, "_load_results", lambda: copy.deepcopy(SAMPLE_RESULTS))
     saved = []
     monkeypatch.setattr(api_module, "_save_results", lambda res: saved.extend(res))
+    # Patch both the key value AND the configured flag so _check_auth() correctly
+    # returns 401 (bad/missing token) vs 503 (key not configured at all).
+    monkeypatch.setattr(api_module, "VERIFY_API_KEY", _TEST_API_KEY)
     monkeypatch.setattr(api_module, "_AUTH_CONFIGURED", True)
     written_traces = []
     monkeypatch.setattr(api_module, "append_trace", lambda rec, traces_dir=None: written_traces.append(rec))
@@ -418,7 +426,7 @@ def test_verify_hotspot_writes_trace(client, monkeypatch, tmp_path):
     assert "human_verified" in rec.decision
     assert rec.observation.get("previous_status") == "needs_review"
     # Credentials must not appear in the trace
-    assert VERIFY_API_KEY not in json.dumps(rec.to_dict())
+    assert _TEST_API_KEY not in json.dumps(rec.to_dict())
 
 
 # --- repeated / conflicting decisions ---

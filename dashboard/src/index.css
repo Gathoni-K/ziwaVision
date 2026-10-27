@@ -69,9 +69,13 @@ body::before {
 .header-logo {
   width: 44px; height: 44px;
   border-radius: 50%;
-  object-fit: cover;
+  object-fit: contain;
+  background-color: #082931;
+  padding: 2px;
   border: 2px solid var(--accent);
   box-shadow: 0 0 12px rgba(0,229,160,0.35);
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 .header-titles h1 {
@@ -467,6 +471,10 @@ td {
   border-radius: var(--radius-sm);
   padding: 12px 18px;
   font-size: 0.84rem;
+  font-family: inherit;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
   box-shadow: var(--shadow);
   display: flex; align-items: center; gap: 10px;
   animation: slideIn 0.3s ease;
@@ -595,6 +603,7 @@ tbody tr { animation: fadeUp 0.25s ease both; }
   .header-logo {
     width: 36px;
     height: 36px;
+    padding: 1px;
   }
   .header-titles h1 { font-size: 1.05rem; }
   .header-titles p { font-size: 0.68rem; }

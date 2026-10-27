@@ -13,9 +13,8 @@ interface ToastProps {
 
 export const Toast: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
   return (
-    <div
+    <section
       className="toast-container"
-      role="region"
       aria-label="Notification alerts"
       aria-live="polite"
       aria-atomic="true"
@@ -23,20 +22,21 @@ export const Toast: React.FC<ToastProps> = ({ toasts, onDismiss }) => {
       {toasts.map((t) => {
         const icon = t.type === 'success' ? '✅' : t.type === 'error' ? '❌' : 'ℹ️';
         return (
-          <div
+          <button
             key={t.id}
+            type="button"
             className={`toast ${t.type}`}
             onClick={() => onDismiss(t.id)}
-            style={{ cursor: 'pointer' }}
             title="Click to dismiss"
+            aria-label={`Dismiss notification: ${t.message}`}
           >
             <span className="toast-icon" aria-hidden="true">
               {icon}
             </span>
             <span>{t.message}</span>
-          </div>
+          </button>
         );
       })}
-    </div>
+    </section>
   );
 };

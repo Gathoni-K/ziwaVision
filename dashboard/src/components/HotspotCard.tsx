@@ -38,7 +38,7 @@ export const HotspotCard: React.FC<HotspotCardProps> = ({
       onClick={() => onSelect(hotspot.date)}
       onKeyDown={handleKeyDown}
       tabIndex={0}
-      role="row"
+      // role="row"
       aria-selected={isSelected}
       style={{ animationDelay: `${index * 0.03}s` }}
     >

@@ -67,7 +67,7 @@ export const MonitorPage: React.FC = () => {
     setIsInspecting(true);
     setInspectError(null);
     try {
-      addToast('info', `Querying Earth Search for ${date} — retrieving Sentinel-2 scene and running computer vision analysis…`);
+      addToast('info', `Querying Earth Search for ${date}, retrieving Sentinel-2 scene and running computer vision analysis…`);
       const res = await inspectScene(date);
       if (res.ok && res.hotspot) {
         updateLocalHotspot(res.hotspot);
@@ -112,7 +112,7 @@ export const MonitorPage: React.FC = () => {
       <Header apiConnected={isApiConnected} isSimulated={isFallback} />
 
       {/* Page intro */}
-      <div className="monitor-intro" role="region" aria-label="Page introduction">
+      <section className="monitor-intro" aria-label="Page introduction">
         <div className="monitor-intro-inner">
           <h1 className="monitor-title">Satellite monitoring</h1>
           <p className="monitor-subtitle">
@@ -127,7 +127,7 @@ export const MonitorPage: React.FC = () => {
             10 m per pixel (Sentinel-2)
           </div>
         </div>
-      </div>
+      </section>
 
       <main className="app-layout" id="main-content">
         <section aria-label="Observation overview">
@@ -200,7 +200,7 @@ export const MonitorPage: React.FC = () => {
                 SAMPLE DATA
               </span>
               <span>
-                The live API backend is offline. These are reference fixture observations — not current
+                The live API backend is offline. These are reference fixture observations, not current
                 satellite data.
               </span>
             </div>
@@ -229,7 +229,7 @@ export const MonitorPage: React.FC = () => {
             </div>
             <ul className="limitations-list">
               <li>
-                <strong>Clouds and poor image quality</strong> can prevent the system from seeing anything — a failed or inconclusive result does not mean the area is clear.
+                <strong>Clouds and poor image quality</strong> can prevent the system from seeing anything, a failed or inconclusive result does not mean the area is clear.
               </li>
               <li>
                 <strong>The system identifies patterns</strong>, not plant species. Shoreline vegetation, shallow sediment, and other features can produce similar spectral signatures to floating vegetation.
@@ -238,7 +238,7 @@ export const MonitorPage: React.FC = () => {
                 <strong>Each image describes conditions at its acquisition time.</strong> Floating vegetation can shift with wind and current, so a clear observation on one date does not mean other areas are clear.
               </li>
               <li>
-                <strong>Tracking movement</strong> requires observations across multiple dates and additional evidence — a single image cannot establish direction or predict future position.
+                <strong>Tracking movement</strong> requires observations across multiple dates and additional evidence, a single image cannot establish direction or predict future position.
               </li>
               <li>
                 <strong>Human review and field observation</strong> remain important for assessing candidate findings before acting on them.

@@ -3,23 +3,25 @@ import { Hotspot, InspectResponse, TraceEntry, VerifyPayload, VerifyResponse } f
 /**
  * Centralized typed API client for ZiwaVision.
  *
- * Configured via VITE_API_BASE_URL and VITE_API_KEY environment variables.
+ * Configured via VITE_API_BASE_URL (build-time, non-secret — just a URL).
  * Defaults to http://localhost:5050 in local development.
  *
  * Route changes (2026-10-26):
- *   - GET /api/hotspots/<date>  moved to  GET /api/hotspots/by-date/<date>
- *   - GET /api/hotspots/<id>    returns full hotspot with traces attached
- *   - POST /api/hotspots/<id>/verify  is the canonical human-review endpoint
+ *   - GET /api/hotspots/\<date\>  moved to  GET /api/hotspots/by-date/\<date\>
+ *   - GET /api/hotspots/\<id\>    returns full hotspot with traces attached
+ *   - POST /api/hotspots/\<id\>/verify  is the canonical human-review endpoint
  *   - POST /api/verify          remains for backward compat (legacy dashboard flows)
  *
- * Security: VITE_API_KEY is a development-only default.
- * In production the key must be injected at deploy time and must never be
- * committed to the repository or bundled into the public frontend.
+ * Security model for human-review authentication:
+ *   The ZIWAVISION_API_KEY is a secret held by the server (via SSM in production).
+ *   It must NEVER be placed in a VITE_* env variable — any VITE_ value is
+ *   compiled into the public JS bundle and visible to all users.
+ *   The correct pattern: the operator UI collects the key at runtime (e.g. a
+ *   password input) and passes it explicitly as the `apiKey` option to the
+ *   verify* functions below.  No key is stored or cached by this module.
  */
 const API_BASE = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:5050').replace(/\/$/, '');
 
-// Do not embed a hardcoded secret into the public client bundle.
-export const API_KEY = import.meta.env.VITE_API_KEY || '';
 
 export async function checkHealth(): Promise<boolean> {
   try {
@@ -83,7 +85,7 @@ export async function verifyHotspotById(
   decision: 'verified' | 'rejected',
   options?: { notes?: string; reviewerId?: string; reReview?: boolean; apiKey?: string }
 ): Promise<VerifyResponse> {
-  const token = options?.apiKey || API_KEY;
+  const token = options?.apiKey || '';
   const body: Record<string, unknown> = { decision };
   if (options?.notes)      body.notes       = options.notes;
   if (options?.reviewerId) body.reviewer_id = options.reviewerId;
@@ -106,11 +108,11 @@ export async function verifyHotspotById(
 }
 
 /**
- * Legacy verify — kept so existing dashboard flows continue working.
+ * Legacy verify, kept so existing dashboard flows continue working.
  * New code should prefer verifyHotspotById.
  */
 export async function verifyHotspot(payload: VerifyPayload, apiKey?: string): Promise<VerifyResponse> {
-  const token = apiKey || API_KEY;
+  const token = apiKey || '';
   const res = await fetch(`${API_BASE}/api/verify`, {
     method: 'POST',
     headers: {

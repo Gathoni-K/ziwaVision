@@ -59,18 +59,56 @@ RESULTS_PATH  = os.path.join(OUTPUTS_DIR, "results.json")
 OVERLAYS_DIR  = os.path.join(OUTPUTS_DIR, "overlays")
 PORT          = int(os.environ.get("PORT", 5050))
 
-# Auth: fail closed.  If the env-var is not set the API starts but all
-# human-review endpoints return 503 so the service cannot be used without
-# explicit configuration.  The default value is for local *development only*
-# and must never reach a production deployment.
-_RAW_API_KEY = os.environ.get("ZIWAVISION_API_KEY") or os.environ.get("VERIFY_API_KEY")
-# Key must be explicitly set and at least 16 chars; fails closed otherwise
-VERIFY_API_KEY: Optional[str] = _RAW_API_KEY.strip() if (_RAW_API_KEY and len(_RAW_API_KEY.strip()) >= 16) else None
+
+def _resolve_api_key() -> Optional[str]:
+    """
+    Resolve the API key with two-tier lookup:
+
+    1. Direct env-var (local development and CI):
+       ZIWAVISION_API_KEY or VERIFY_API_KEY
+
+    2. SSM Parameter Store (Lambda production deployment):
+       The SAM template passes ZIWAVISION_API_KEY_PARAM containing the SSM
+       parameter *name* (e.g. /ziwavision/prod/api-key).  The Lambda IAM role
+       is granted ssm:GetParameter + kms:Decrypt on that path.
+       This keeps the actual secret out of CloudFormation events and Lambda
+       environment variable plaintext listings.
+
+    Returns the key string if ≥ 16 characters, else None (fail-closed).
+    """
+    # Tier 1: plain env-var (dev / CI)
+    raw = os.environ.get("ZIWAVISION_API_KEY") or os.environ.get("VERIFY_API_KEY")
+    if raw and len(raw.strip()) >= 16:
+        return raw.strip()
+
+    # Tier 2: SSM (Lambda container in production)
+    param_name = os.environ.get("ZIWAVISION_API_KEY_PARAM")
+    if param_name:
+        try:
+            import boto3  # noqa: PLC0415
+            ssm = boto3.client("ssm", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+            resp = ssm.get_parameter(Name=param_name, WithDecryption=True)
+            value = resp["Parameter"]["Value"].strip()
+            if len(value) >= 16:
+                return value
+            print(
+                f"WARNING: SSM parameter {param_name!r} returned a value shorter than "
+                "16 characters; treating as unconfigured."
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"WARNING: Failed to fetch API key from SSM ({param_name!r}): {exc}")
+
+    return None
+
+
+# Auth: fail closed.  If neither env-var nor SSM yields a valid key the API
+# starts but all human-review endpoints return 503.
+VERIFY_API_KEY: Optional[str] = _resolve_api_key()
 _AUTH_CONFIGURED = VERIFY_API_KEY is not None
 
 if not _AUTH_CONFIGURED:
     print(
-        "WARNING: ZIWAVISION_API_KEY is not set or has fewer than 16 characters. "
+        "WARNING: ZIWAVISION_API_KEY is not set (or < 16 chars) and SSM lookup failed. "
         "Human-review endpoints will fail closed (HTTP 503) until properly configured."
     )
 
@@ -730,9 +768,19 @@ def _utc_now() -> str:
 
 
 # ── Lambda handler ─────────────────────────────────────────────────────────────
+#
+# Mangum 0.17+ is ASGI-only.  Flask is a WSGI application.
+# Without an explicit WSGI→ASGI bridge, Mangum.Mangum(app) constructs without
+# error but raises RuntimeError ("unable to infer a handler") on every real
+# Lambda invocation because it cannot detect the event type from a WSGI callable.
+#
+# Fix: wrap Flask in a2wsgi.WSGIMiddleware (an ASGI adapter) before passing
+# to Mangum.  lifespan='off' disables the ASGI lifespan protocol, which Flask
+# does not implement.
 try:
+    from a2wsgi import WSGIMiddleware
     from mangum import Mangum
-    handler = Mangum(app)
+    handler = Mangum(WSGIMiddleware(app), lifespan="off")
 except ImportError:
     handler = None
 

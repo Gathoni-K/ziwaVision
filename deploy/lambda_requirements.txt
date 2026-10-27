@@ -1,0 +1,32 @@
+# deploy/lambda_requirements.txt
+# Minimal runtime dependencies for the ZiwaVision Lambda container.
+# This is NOT requirements.txt (the full local venv dump).
+# The Dockerfile installs only these packages so the image stays within the
+# 10 GB Lambda container limit and cold-starts remain fast.
+#
+# Native libraries (libGL, libgomp, glib2) are installed via dnf in the
+# Dockerfile before pip runs. Do NOT add packages here that require system
+# libs not already present in the base image.
+
+# ── Web framework ─────────────────────────────────────────────────────────────
+Flask==3.1.3
+flask-cors==6.0.5
+mangum==0.22.0        # ASGI adapter for Lambda + API Gateway
+a2wsgi==1.10.10       # WSGI-to-ASGI bridge (required for Flask + Mangum)
+
+# ── Computer vision (headless wheel — no GUI deps) ───────────────────────────
+opencv-python-headless==5.0.0.93
+
+# ── Geospatial / satellite ingestion ─────────────────────────────────────────
+rasterio==1.5.1
+pystac-client==0.9.0
+pystac==1.15.2
+aiohttp==3.14.3         # async STAC HTTP calls
+requests==2.34.2
+
+# ── Array / data processing & plotting ────────────────────────────────────────
+numpy==2.5.3
+matplotlib==3.11.2       # required by inspector.py evidence rendering
+
+# ── AWS SDK ───────────────────────────────────────────────────────────────────
+boto3==1.43.75          # S3 results persistence + SSM key retrieval

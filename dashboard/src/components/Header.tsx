@@ -12,7 +12,7 @@ export const Header: React.FC<HeaderProps> = ({ apiConnected, isSimulated = fals
       <NavLink to="/" aria-label="ZiwaVision home" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
         <img
           src="/logo.jpg"
-          alt="ZiwaVision — Lake Victoria satellite monitoring"
+          alt="ZiwaVision, Lake Victoria satellite monitoring"
           className="header-logo"
         />
         <div className="header-titles">

@@ -651,3 +651,94 @@ def test_runs_survive_storage(monkeypatch, tmp_path):
     assert loaded["run_id"] == "run-xyz-123"
     assert loaded["status"] == "completed"
 
+
+# ── Lambda / API Gateway integration tests ─────────────────────────────────────
+
+class _MockLambdaContext:
+    function_name = "ziwavision-api"
+    memory_limit_in_mb = 1024
+    invoked_function_arn = "arn:aws:lambda:us-east-1:123456789012:function:ziwavision-api"
+    aws_request_id = "test-request-id-health"
+
+
+def test_lambda_handler_health_api_gateway_v1():
+    """Invoke handler with representative API Gateway REST API v1 event (SAM Type: Api)."""
+    assert api_module.handler is not None, "Lambda handler must be registered in api.py"
+
+    event = {
+        "resource": "/health",
+        "path": "/health",
+        "httpMethod": "GET",
+        "headers": {
+            "Host": "api.ziwavision.test",
+            "X-Forwarded-Proto": "https",
+        },
+        "multiValueHeaders": {},
+        "queryStringParameters": None,
+        "multiValueQueryStringParameters": None,
+        "pathParameters": None,
+        "stageVariables": None,
+        "requestContext": {
+            "resourceId": "health-resource",
+            "resourcePath": "/health",
+            "httpMethod": "GET",
+            "extendedRequestId": "req-123",
+            "path": "/health",
+            "accountId": "123456789012",
+            "protocol": "HTTP/1.1",
+            "stage": "prod",
+            "requestId": "test-req-v1",
+            "identity": {
+                "sourceIp": "127.0.0.1",
+            },
+        },
+        "body": None,
+        "isBase64Encoded": False,
+    }
+
+    res = api_module.handler(event, _MockLambdaContext())
+    assert isinstance(res, dict)
+    assert res["statusCode"] == 200
+    assert "application/json" in res["headers"]["content-type"]
+
+    body = json.loads(res["body"])
+    assert body["status"] == "ok"
+    assert body["service"] == "ZiwaVision API"
+    assert "auth_configured" in body
+
+
+def test_lambda_handler_health_api_gateway_v2():
+    """Invoke handler with representative API Gateway HTTP API v2 event."""
+    assert api_module.handler is not None, "Lambda handler must be registered in api.py"
+
+    event = {
+        "version": "2.0",
+        "routeKey": "GET /health",
+        "rawPath": "/health",
+        "rawQueryString": "",
+        "headers": {
+            "host": "api.ziwavision.test",
+            "x-forwarded-proto": "https",
+        },
+        "requestContext": {
+            "http": {
+                "method": "GET",
+                "path": "/health",
+                "protocol": "HTTP/1.1",
+                "sourceIp": "127.0.0.1",
+                "userAgent": "pytest",
+            },
+        },
+        "isBase64Encoded": False,
+    }
+
+    res = api_module.handler(event, _MockLambdaContext())
+    assert isinstance(res, dict)
+    assert res["statusCode"] == 200
+    assert "application/json" in res["headers"]["content-type"]
+
+    body = json.loads(res["body"])
+    assert body["status"] == "ok"
+    assert body["service"] == "ZiwaVision API"
+    assert "auth_configured" in body
+

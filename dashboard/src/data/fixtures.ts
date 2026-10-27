@@ -17,7 +17,7 @@ export const FIXTURE_HOTSPOTS: Hotspot[] = [
     mean_patch_iou: 0.162,
     n_in_reference: 3,
     action: 'request_human_verification',
-    agent_reason: 'High confidence 0.72, scene IoU 0.184, 14.82 ha — candidate floating vegetation confirmed consistent with reference.',
+    agent_reason: 'High confidence 0.72, scene IoU 0.184, 14.82 ha, candidate floating vegetation confirmed consistent with reference.',
     verification_status: 'needs_review',
     decided_at: '2026-09-07T10:32:00Z',
     overlay_filename: '2026-09-07.png',

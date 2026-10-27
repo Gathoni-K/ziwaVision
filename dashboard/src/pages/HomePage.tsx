@@ -11,7 +11,7 @@ function outcomeLabel(h: Hotspot): string {
     case 'rejected': return 'Rejected by a reviewer';
     case 'needs_review':
     case 'needs_verification': return 'Pending human review';
-    case 'uncertain': return 'Uncertain — inconclusive evidence';
+    case 'uncertain': return 'Uncertain, inconclusive evidence';
     case 'rejected_as_artefact': return 'Rejected as an analysis artefact';
     case 'candidate': return 'Candidate patch identified';
     case 'skipped': return 'No suitable scene available';
@@ -167,8 +167,8 @@ export const HomePage: React.FC = () => {
                 <p>
                   The <strong>Active Inspector</strong> evaluates image quality, compares alternative
                   detection runs, investigates candidate areas in more detail, and requests human
-                  review when the evidence is inconclusive. It applies deterministic rules — not
-                  guesswork — and records every decision and its justification.
+                  review when the evidence is inconclusive. It applies deterministic rules, not
+                  guesswork, and records every decision and its justification.
                 </p>
                 <span className="capability-status capability-status-live">Implemented · Deterministic gates</span>
               </div>
@@ -197,7 +197,7 @@ export const HomePage: React.FC = () => {
           <h2 className="section-heading">Development milestones</h2>
           <p className="section-lead">
             The following represent completed work in the current prototype. These are not projected
-            capabilities — they exist in the repository and are demonstrated by the satellite
+            capabilities, they exist in the repository and are demonstrated by the satellite
             monitoring page.
           </p>
 
@@ -236,7 +236,7 @@ export const HomePage: React.FC = () => {
 
           {/* Live observations from API */}
           {recentHotspots.length > 0 && (
-            <div className="recent-obs-section" aria-label="Recent observations from the API">
+            <div className="recent-obs-section">
               <h3 className="recent-obs-heading">Recent observations from the API</h3>
               <p className="recent-obs-note">
                 These records are loaded from the live backend and reflect actual stored inspection
@@ -300,7 +300,7 @@ export const HomePage: React.FC = () => {
             <div className="how-step">
               <div className="how-step-num" aria-hidden="true">2</div>
               <h3>Examine</h3>
-              <p>Analyse the image to identify areas where the spectral pattern is consistent with floating vegetation. These areas are called candidate patches — not confirmed detections.</p>
+              <p>Analyse the image to identify areas where the spectral pattern is consistent with floating vegetation. These areas are called candidate patches, not confirmed detections.</p>
             </div>
             <div className="how-step-connector" aria-hidden="true" />
             <div className="how-step">
@@ -318,67 +318,128 @@ export const HomePage: React.FC = () => {
         </div>
       </section>
 
-      {/* ─── LONG-TERM VISION ────────────────────────────────────────────── */}
-      <section className="home-section vision-section" aria-label="Long-term vision">
+      {/* ─── ROADMAP: COORDINATED, LAKE-WIDE EARLY WARNING ───────────────── */}
+      <section className="home-section vision-section" aria-label="Roadmap">
         <div className="home-section-inner">
-          <div className="section-eyebrow">The larger vision</div>
-          <h2 className="section-heading">One lake, three countries</h2>
+          <div className="section-eyebrow">Strategic roadmap</div>
+          <h2 className="section-heading">Building towards coordinated, lake-wide early warning</h2>
           <p className="section-lead">
-            Water hyacinth does not respect national boundaries. Lake Victoria is shared by Kenya,
-            Uganda, and Tanzania. The longer-term goal is to expand beyond the initial Kenyan study
-            area toward observations across the full lake — but that work begins with getting the
-            prototype right.
+            ZiwaVision is being developed to strengthen ZiwaClear's ability to identify possible
+            water-hyacinth hotspots and support better-informed responses. Its future depends not
+            only on improving the technology, but also on learning from existing research, engaging
+            communities and working alongside the institutions responsible for Lake Victoria.
           </p>
 
-          <div className="vision-timeline">
-            <div className="vision-phase">
-              <div className="vision-phase-label">Today</div>
-              <div className="vision-phase-content">
-                <h3>Prototype development</h3>
-                <p>Working on a focused study area around Dunga Beach, Winam Gulf, Kenya. Building and testing the detection pipeline, Active Inspector, and evidence trail with real Sentinel-2 imagery.</p>
-                <ul className="vision-phase-list">
-                  <li>Live Sentinel-2 retrieval and OpenCV 5 analysis</li>
-                  <li>Active Inspector with deterministic decision rules</li>
-                  <li>Human verification with authenticated access control</li>
-                  <li>Persistent audit traces for every inspection</li>
-                </ul>
+          <div className="roadmap-grid">
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">01</span>
+                <h3>Validate the observation pipeline</h3>
+              </div>
+              <p>
+                Improve candidate detection using real satellite observations, reference data and field
+                validation. Measure false positives and missed detections, document where the method
+                struggles, and establish when a candidate can reasonably be passed for review.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> A better-understood and more reliable source of hotspot information.
               </div>
             </div>
 
-            <div className="vision-phase-sep" aria-hidden="true" />
-
-            <div className="vision-phase vision-phase-next">
-              <div className="vision-phase-label vision-phase-label-next">Next</div>
-              <div className="vision-phase-content">
-                <h3>Expanded coverage and reliability</h3>
-                <p>Extend observations beyond the current bounding box, improve detection reliability, and build tools to compare how candidate areas change between acquisition dates.</p>
-                <ul className="vision-phase-list">
-                  <li>Broader geographic coverage within Lake Victoria</li>
-                  <li>Multi-date comparison to track changes over time</li>
-                  <li>Improved detection thresholds and false-alarm reduction</li>
-                  <li>More complete coverage of cloud-affected periods</li>
-                </ul>
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">02</span>
+                <h3>Connect observations to ZiwaClear's response workflow</h3>
+              </div>
+              <p>
+                Develop a practical pathway for validated observations to inform ZiwaClear's
+                priorities. Work with lakeside communities, Beach Management Units and relevant
+                county and operational stakeholders to establish what makes an observation useful
+                and actionable.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> Move from isolated detections towards information that can support the prioritisation and coordination of community-based response.
               </div>
             </div>
 
-            <div className="vision-phase-sep" aria-hidden="true" />
-
-            <div className="vision-phase vision-phase-future">
-              <div className="vision-phase-label vision-phase-label-future">Long term</div>
-              <div className="vision-phase-content">
-                <h3>Lake-wide monitoring</h3>
-                <p>Work toward observations across the lake shared by Kenya, Uganda, and Tanzania. Connect satellite observations, verified field reports, and date-to-date comparisons into a more complete cross-border picture.</p>
-                <ul className="vision-phase-list">
-                  <li>Lake-wide coverage spanning three countries</li>
-                  <li>Integration with field observation and ground-truth data</li>
-                  <li>Information sharing across national monitoring programmes</li>
-                  <li>Open data access for research and policy</li>
-                </ul>
-                <p className="vision-phase-note">
-                  <em>These are stated ambitions, not confirmed partnerships or deployed capabilities.</em>
-                </p>
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">03</span>
+                <h3>Build alongside existing monitoring initiatives</h3>
+              </div>
+              <p>
+                Engage KMFRI and other relevant research teams to understand existing
+                satellite-monitoring methods, validation data and community-based early-warning
+                research. Work with the Lake Victoria Basin Commission to explore how our outputs
+                might complement the regional Water Information System and its shared decision-support role.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> Build on established work, improve interoperability where useful, and avoid duplicating systems that already serve the region.
               </div>
             </div>
+
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">04</span>
+                <h3>Combine satellite and environmental evidence</h3>
+              </div>
+              <p>
+                Evaluate Sentinel-1 radar observations alongside Sentinel-2 imagery, and
+                investigate how community reports, relevant environmental measurements and climate
+                information could improve confidence and continuity.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> Establish whether complementary data sources improve detection quality and monitoring coverage.
+              </div>
+            </div>
+
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">05</span>
+                <h3>Develop climate-informed early warning</h3>
+              </div>
+              <p>
+                Explore suitable rainfall, wind and seasonal forecast products, including relevant
+                ACMAD and national meteorological services. Test whether these signals help identify
+                conditions associated with emerging hotspots, using historical observations and
+                field evidence to evaluate false alarms, missed events and warning lead time.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> Develop a validated approach for identifying where additional attention may be needed before relying on predictive risk scores operationally.
+              </div>
+            </div>
+
+            <div className="roadmap-card">
+              <div className="roadmap-card-header">
+                <span className="roadmap-num">06</span>
+                <h3>Expand towards a shared view of Lake Victoria</h3>
+              </div>
+              <p>
+                Progressively extend monitoring from the initial Kenyan study area towards the
+                wider lake. Work with relevant institutions in Kenya, Uganda and Tanzania to
+                explore data sharing, comparable observations and cross-border coordination.
+              </p>
+              <div className="roadmap-goal">
+                <strong>Goal:</strong> Contribute to a more connected picture of water-hyacinth activity across the lake, supporting better-informed and more coordinated responses.
+              </div>
+            </div>
+          </div>
+
+          <div className="roadmap-approach">
+            <div className="roadmap-approach-header">
+              <span className="roadmap-approach-badge">Core Principle</span>
+              <h3>Our approach</h3>
+            </div>
+            <p>
+              ZiwaVision is not intended to replace established research, monitoring systems or
+              local knowledge. It aims to build a complementary observation and inspection
+              capability that can strengthen ZiwaClear over time.
+            </p>
+            <p>
+              Each stage depends on evidence from the previous one. Wider coverage, forecasting
+              and operational integration will follow validation and stakeholder engagement, not
+              precede them.
+            </p>
           </div>
         </div>
       </section>

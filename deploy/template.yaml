@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 
 Description: >
   ZiwaVision — Visual Hotspot Verification
-  Lambda (Python 3.12) + API Gateway + S3 static dashboard.
+  Lambda container image (Python 3.12 + OpenCV 5) + API Gateway + S3 static dashboard.
   OpenCV AI Competition 2026, powered by AWS.
 
 Parameters:
@@ -17,21 +17,36 @@ Parameters:
     Default: prod
     AllowedValues: [prod, dev]
 
+  ApiKeyParamName:
+    Type: AWS::SSM::Parameter::Name
+    Description: >
+      SSM Parameter Store path that holds the ZIWAVISION_API_KEY secret.
+      The parameter must exist before deployment and must be of type SecureString.
+      Example: /ziwavision/prod/api-key
+    Default: /ziwavision/prod/api-key
+
+  ImageUri:
+    Type: String
+    Description: >
+      ECR image URI for the Lambda container, e.g.
+      123456789012.dkr.ecr.us-east-1.amazonaws.com/ziwavision:latest
+      Build and push with: bash deploy/push_image.sh
+
+# ── Globals ────────────────────────────────────────────────────────────────────
 Globals:
   Function:
     Timeout: 300
     MemorySize: 1024
-    Runtime: python3.12
-    # For Graviton benchmark, change Architectures to [arm64]
+    # For Graviton / COOL track, change to [arm64] (also rebuild the image for linux/arm64)
     Architectures: [x86_64]
     Environment:
       Variables:
-        RESULTS_BUCKET: !Ref BucketName
+        RESULTS_BUCKET: !Ref ResultsBucket
         ENVIRONMENT:    !Ref Environment
 
 Resources:
 
-  # ── S3 bucket: static dashboard + results data ────────────────────────────
+  # ── S3 bucket: static dashboard website ───────────────────────────────────────
   DashboardBucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -63,7 +78,18 @@ Resources:
             Action: s3:GetObject
             Resource: !Sub 'arn:aws:s3:::${BucketName}/*'
 
-  # ── IAM role for the Lambda ───────────────────────────────────────────────
+  # ── S3 bucket: private results & runs data ────────────────────────────────────
+  ResultsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketName}-results'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls:       true
+        BlockPublicPolicy:     true
+        IgnorePublicAcls:      true
+        RestrictPublicBuckets: true
+
+  # ── IAM role for the Lambda ───────────────────────────────────────────────────
   ApiLambdaRole:
     Type: AWS::IAM::Role
     Properties:
@@ -86,20 +112,49 @@ Resources:
                   - s3:PutObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub 'arn:aws:s3:::${BucketName}'
-                  - !Sub 'arn:aws:s3:::${BucketName}/*'
+                  - !Sub 'arn:aws:s3:::${BucketName}-results'
+                  - !Sub 'arn:aws:s3:::${BucketName}-results/*'
+        - PolicyName: SSMReadApiKey
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${ApiKeyParamName}'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource: '*'
+                Condition:
+                  StringEquals:
+                    'kms:ViaService': !Sub 'ssm.${AWS::Region}.amazonaws.com'
 
-  # ── Lambda function: Flask API via Mangum ─────────────────────────────────
+  # ── Lambda function: Flask API via Mangum (container image) ───────────────────
+  #
+  # Uses container image packaging so native shared libraries (libGL, libgomp,
+  # rasterio GDAL wheels) bundled in the Dockerfile are available at runtime.
+  # ZIP-style packaging (CodeUri + Handler) cannot satisfy these native deps.
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub 'ziwavision-api-${Environment}'
-      CodeUri: ../src/
-      Handler: api.handler
-      Role: !GetAtt ApiLambdaRole.Arn
-      Description: ZiwaVision REST API — hotspots, overlays, verify
+      FunctionName:  !Sub 'ziwavision-api-${Environment}'
+      Description:   ZiwaVision REST API — hotspots, overlays, verify
+      Role:          !GetAtt ApiLambdaRole.Arn
+      PackageType:   Image
+      ImageUri:      !Ref ImageUri
+      # CMD override — must match the handler registered in api.py: handler = Mangum(app)
+      ImageConfig:
+        Command: ["api.handler"]
+      Environment:
+        Variables:
+          # The SSM parameter name is passed in; the Lambda reads it at cold-start.
+          # The actual secret value is fetched by the application, not injected here,
+          # so it never appears in CloudFormation events or Lambda environment variable
+          # listings in plain text.
+          ZIWAVISION_API_KEY_PARAM: !Ref ApiKeyParamName
       Events:
-        ApiRoot:
+        ApiProxy:
           Type: Api
           Properties:
             RestApiId: !Ref ApiGateway
@@ -112,20 +167,20 @@ Resources:
             Path: /health
             Method: GET
 
-  # ── API Gateway ───────────────────────────────────────────────────────────
+  # ── API Gateway ───────────────────────────────────────────────────────────────
   ApiGateway:
     Type: AWS::Serverless::Api
     Properties:
-      Name: !Sub 'ziwavision-api-${Environment}'
+      Name:      !Sub 'ziwavision-api-${Environment}'
       StageName: !Ref Environment
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
         AllowHeaders: "'Content-Type,Authorization'"
-        AllowOrigin: "'*'"
+        AllowOrigin:  "'*'"
 
 Outputs:
   DashboardUrl:
-    Description: S3 website URL for the dashboard
+    Description: S3 website URL for the static dashboard
     Value: !GetAtt DashboardBucket.WebsiteURL
 
   ApiUrl:
@@ -133,5 +188,13 @@ Outputs:
     Value: !Sub 'https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}'
 
   BucketName:
-    Description: S3 bucket name
+    Description: S3 dashboard bucket name
     Value: !Ref BucketName
+
+  ResultsBucketName:
+    Description: S3 private results bucket name
+    Value: !Ref ResultsBucket
+
+  LambdaFunctionArn:
+    Description: ARN of the deployed Lambda function
+    Value: !GetAtt ApiFunction.Arn

@@ -71,7 +71,7 @@ export interface Hotspot {
   patch_details: PatchDetail[];
   verified_at?: string;
   reviewer_notes?: string;
-  /** Attached inspection trace — present on GET /api/hotspots/<id> responses. */
+  /** Attached inspection trace, present on GET /api/hotspots/<id> responses. */
   trace?: TraceEntry[];
 }
 

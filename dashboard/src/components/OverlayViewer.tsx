@@ -40,7 +40,7 @@ export const OverlayViewer: React.FC<OverlayViewerProps> = ({ date }) => {
       ) : (
         <img
           src={imgUrl}
-          alt={`Satellite overlay for ${date} — candidate floating vegetation highlighted in yellow`}
+          alt={`Satellite overlay for ${date}, candidate floating vegetation highlighted in yellow`}
           onLoad={() => setIsLoading(false)}
           onError={() => {
             setIsLoading(false);
